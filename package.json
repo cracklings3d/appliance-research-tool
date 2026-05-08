@@ -1,0 +1,30 @@
+{
+  "name": "appliance-research-tool",
+  "version": "1.0.0",
+  "description": "Plan and compare different options for buying appliances",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "npx vite",
+    "build": "npx vite build",
+    "electron:build": "npm run build && npx electron-builder",
+    "electron:dev": "npx vite"
+  },
+  "keywords": [
+    "appliance",
+    "comparison",
+    "shopping",
+    "research"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.3",
+    "electron": "^42.0.0",
+    "electron-builder": "^26.8.1",
+    "vite": "^6.4.2",
+    "vite-plugin-electron": "^0.29.1",
+    "vite-plugin-electron-renderer": "^0.14.7",
+    "vue": "^3.5.13"
+  }
+}
