@@ -1,6 +1,10 @@
 # Appliance Research Tool
 
-A desktop application for planning and comparing different options for buying appliances.
+A desktop application for planning and comparing options when buying appliances.
+
+## Domain Language
+
+See [GLOSSARY.md](./GLOSSARY.md) for the authoritative vocabulary on Appliances, Options, Dimensions, Evaluations, and more.
 
 ## Tech Stack
 
