@@ -1,0 +1,70 @@
+{
+  "contractVersion": "1.0",
+  "appliance": "laundry-set",
+  "options": [
+    {
+      "id": "opt-laundry-set-samsung-7000",
+      "evaluations": {
+        "brand": {
+          "status": "known",
+          "value": "Samsung"
+        },
+        "model": {
+          "status": "known",
+          "value": "7000 Laundry Set"
+        },
+        "bundlePrice": {
+          "status": "known",
+          "value": 6999
+        },
+        "discountAmount": {
+          "status": "known",
+          "value": 299
+        },
+        "washer": {
+          "status": "known",
+          "value": "opt-washer-samsung-ww7000"
+        },
+        "dryer": {
+          "status": "known",
+          "value": "opt-dryer-samsung-dv90"
+        },
+        "sourceUrl": {
+          "status": "known",
+          "value": "https://example.com/laundry-set/samsung-7000"
+        }
+      }
+    },
+    {
+      "id": "opt-laundry-set-broken-pointer-01",
+      "evaluations": {
+        "brand": {
+          "status": "known",
+          "value": "Samsung"
+        },
+        "model": {
+          "status": "known",
+          "value": "Broken Pointer Demo"
+        },
+        "bundlePrice": {
+          "status": "known",
+          "value": 6899
+        },
+        "discountAmount": {
+          "status": "na"
+        },
+        "washer": {
+          "status": "known",
+          "value": "opt-washer-samsung-ww7000"
+        },
+        "dryer": {
+          "status": "known",
+          "value": "opt-dryer-missing-404"
+        },
+        "sourceUrl": {
+          "status": "na"
+        }
+      }
+    }
+  ]
+}

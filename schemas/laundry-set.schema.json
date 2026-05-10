@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "1.0",
+  "appliance": "laundry-set",
+  "displayName": "Laundry Set",
+  "pointerDimensionsAllowed": true,
+  "requiredDimensionIds": [
+    "brand",
+    "model",
+    "bundlePrice",
+    "washer",
+    "dryer"
+  ],
+  "defaultListOrder": [
+    {
+      "dimensionId": "bundlePrice",
+      "direction": "asc"
+    },
+    {
+      "dimensionId": "discountAmount",
+      "direction": "desc"
+    }
+  ],
+  "defaultComparisonDimensionIds": [
+    "brand",
+    "model",
+    "bundlePrice",
+    "discountAmount",
+    "washer",
+    "dryer"
+  ],
+  "dimensions": [
+    {
+      "id": "brand",
+      "label": "Brand",
+      "type": "string",
+      "required": true
+    },
+    {
+      "id": "model",
+      "label": "Model",
+      "type": "string",
+      "required": true
+    },
+    {
+      "id": "bundlePrice",
+      "label": "Bundle Price",
+      "type": "numeric",
+      "unit": "CNY",
+      "required": true
+    },
+    {
+      "id": "discountAmount",
+      "label": "Discount Amount",
+      "type": "numeric",
+      "unit": "CNY",
+      "required": false
+    },
+    {
+      "id": "washer",
+      "label": "Washer",
+      "type": "pointer",
+      "targetAppliance": "washer",
+      "required": true
+    },
+    {
+      "id": "dryer",
+      "label": "Dryer",
+      "type": "pointer",
+      "targetAppliance": "dryer",
+      "required": true
+    },
+    {
+      "id": "sourceUrl",
+      "label": "Source URL",
+      "type": "string",
+      "required": false
+    }
+  ]
+}

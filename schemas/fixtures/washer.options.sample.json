@@ -1,0 +1,42 @@
+{
+  "contractVersion": "1.0",
+  "appliance": "washer",
+  "options": [
+    {
+      "id": "opt-washer-samsung-ww7000",
+      "evaluations": {
+        "brand": {
+          "status": "known",
+          "value": "Samsung"
+        },
+        "model": {
+          "status": "known",
+          "value": "WW7000"
+        },
+        "price": {
+          "status": "known",
+          "value": 3299
+        },
+        "capacityKg": {
+          "status": "known",
+          "value": 10
+        },
+        "energyLevel": {
+          "status": "known",
+          "value": "Level 1"
+        },
+        "warrantyMonths": {
+          "status": "known",
+          "value": 24
+        },
+        "sourceUrl": {
+          "status": "known",
+          "value": "https://example.com/washer/ww7000"
+        },
+        "imageUrl": {
+          "status": "na"
+        }
+      }
+    }
+  ]
+}
