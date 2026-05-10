@@ -84,6 +84,10 @@ The app follows Electron's **main/preload/renderer** process model:
 
 Communication between main and renderer is done via IPC (Inter-Process Communication) through the preload bridge.
 
+## MVP Data Contracts
+
+MVP schema and option contracts for `washer`, `dryer`, and `laundry-set` are defined in [`schemas/`](./schemas/README.md).
+
 ## Scripts
 
 | Script | Description |

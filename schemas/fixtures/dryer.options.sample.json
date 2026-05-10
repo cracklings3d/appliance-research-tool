@@ -1,0 +1,54 @@
+{
+  "contractVersion": "1.0",
+  "appliance": "dryer",
+  "options": [
+    {
+      "id": "opt-dryer-samsung-dv90",
+      "evaluations": {
+        "brand": {
+          "status": "known",
+          "value": "Samsung"
+        },
+        "model": {
+          "status": "known",
+          "value": "DV90"
+        },
+        "price": {
+          "status": "known",
+          "value": 3999
+        },
+        "capacityKg": {
+          "status": "known",
+          "value": 9
+        },
+        "energyLevel": {
+          "status": "known",
+          "value": "Level 1"
+        },
+        "heatPumpType": {
+          "status": "known",
+          "value": "Heat Pump"
+        },
+        "annualEnergyKwh": {
+          "status": "known",
+          "value": 185
+        },
+        "noiseLevelDb": {
+          "status": "known",
+          "value": 61
+        },
+        "hasInverterMotor": {
+          "status": "known",
+          "value": true
+        },
+        "sourceUrl": {
+          "status": "known",
+          "value": "https://example.com/dryer/dv90"
+        },
+        "imageUrl": {
+          "status": "na"
+        }
+      }
+    }
+  ]
+}

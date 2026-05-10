@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "1.0",
+  "appliance": "washer",
+  "displayName": "Washer",
+  "pointerDimensionsAllowed": false,
+  "requiredDimensionIds": [
+    "brand",
+    "model",
+    "price",
+    "capacityKg",
+    "energyLevel"
+  ],
+  "defaultListOrder": [
+    {
+      "dimensionId": "price",
+      "direction": "asc"
+    },
+    {
+      "dimensionId": "capacityKg",
+      "direction": "desc"
+    }
+  ],
+  "defaultComparisonDimensionIds": [
+    "brand",
+    "model",
+    "price",
+    "capacityKg",
+    "energyLevel",
+    "warrantyMonths"
+  ],
+  "dimensions": [
+    {
+      "id": "brand",
+      "label": "Brand",
+      "type": "string",
+      "required": true
+    },
+    {
+      "id": "model",
+      "label": "Model",
+      "type": "string",
+      "required": true
+    },
+    {
+      "id": "price",
+      "label": "Price",
+      "type": "numeric",
+      "unit": "CNY",
+      "required": true
+    },
+    {
+      "id": "capacityKg",
+      "label": "Capacity",
+      "type": "numeric",
+      "unit": "kg",
+      "required": true
+    },
+    {
+      "id": "energyLevel",
+      "label": "Energy Level",
+      "type": "enum",
+      "allowedValues": [
+        "Level 1",
+        "Level 2",
+        "Level 3",
+        "Level 4",
+        "Level 5"
+      ],
+      "required": true
+    },
+    {
+      "id": "warrantyMonths",
+      "label": "Warranty",
+      "type": "numeric",
+      "unit": "months",
+      "required": false
+    },
+    {
+      "id": "sourceUrl",
+      "label": "Source URL",
+      "type": "string",
+      "required": false
+    },
+    {
+      "id": "imageUrl",
+      "label": "Image URL",
+      "type": "string",
+      "required": false
+    }
+  ]
+}
