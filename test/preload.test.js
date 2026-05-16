@@ -4,7 +4,7 @@ const path = require('path')
 
 const { loadCommonJsModule } = require('./helpers/loadCommonJsModule')
 
-test('preload preserves existing electronAPI fields and adds schema and option methods', async () => {
+test('preload preserves existing electronAPI fields and adds schema, option, and preset methods', async () => {
   const exposedEntries = []
   const invokeCalls = []
   const onCalls = []
@@ -59,6 +59,9 @@ test('preload preserves existing electronAPI fields and adds schema and option m
   assert.equal(typeof electronApi.loadOptions, 'function')
   assert.equal(typeof electronApi.saveOption, 'function')
   assert.equal(typeof electronApi.deleteOption, 'function')
+  assert.equal(typeof electronApi.loadPresets, 'function')
+  assert.equal(typeof electronApi.savePreset, 'function')
+  assert.equal(typeof electronApi.deletePreset, 'function')
 
   const callback = () => {}
   electronApi.onUpdateCounter(callback)
@@ -67,6 +70,9 @@ test('preload preserves existing electronAPI fields and adds schema and option m
   await electronApi.loadOptions('washer')
   await electronApi.saveOption('washer', { evaluations: {} })
   await electronApi.deleteOption('washer', 'option-1')
+  await electronApi.loadPresets('washer')
+  await electronApi.savePreset('washer', { name: 'Preset', dimensionKeys: ['price'] })
+  await electronApi.deletePreset('washer', 'preset-1')
 
   assert.equal(onCalls[0][0], 'update-counter')
   assert.deepEqual(invokeCalls, [
@@ -74,6 +80,9 @@ test('preload preserves existing electronAPI fields and adds schema and option m
     ['schema:load', 'washer'],
     ['option:load', 'washer'],
     ['option:save', 'washer', { evaluations: {} }],
-    ['option:delete', 'washer', 'option-1']
+    ['option:delete', 'washer', 'option-1'],
+    ['preset:load', 'washer'],
+    ['preset:save', 'washer', { name: 'Preset', dimensionKeys: ['price'] }],
+    ['preset:delete', 'washer', 'preset-1']
   ])
 })
