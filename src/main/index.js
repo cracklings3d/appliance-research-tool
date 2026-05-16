@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 
 const { createOptionStorage } = require('./optionStorage')
+const { createPresetStorage } = require('./presetStorage')
 const { createSchemaStorage } = require('./schemaStorage')
 
 process.env.DIST_ELECTRON = path.join(__dirname, '../..')
@@ -37,26 +38,40 @@ function createWindow() {
 function registerIpcHandlers({
   electronApp = app,
   ipcMainInstance = ipcMain,
-  storage = createSchemaStorage({
+  storage,
+  optionStorage,
+  presetStorage
+} = {}) {
+  const sharedStorage = storage ?? createSchemaStorage({
     userDataPath: electronApp.getPath('userData'),
     isPackaged: electronApp.isPackaged,
     resourcesPath: process.resourcesPath,
     runtimeDir: __dirname
-  }),
-  optionStorage = createOptionStorage({
-    userDataPath: electronApp.getPath('userData'),
-    schemaStorage: storage
   })
-} = {}) {
-  ipcMainInstance.handle('schema:list', () => storage.listSchemas())
-  ipcMainInstance.handle('schema:load', (_event, applianceKey) => storage.loadSchema(applianceKey))
-  ipcMainInstance.handle('option:load', (_event, applianceKey) => optionStorage.loadOptions(applianceKey))
-  ipcMainInstance.handle('option:save', (_event, applianceKey, optionPayload) => optionStorage.saveOption(applianceKey, optionPayload))
-  ipcMainInstance.handle('option:delete', (_event, applianceKey, optionId) => optionStorage.deleteOption(applianceKey, optionId))
+
+  const sharedOptionStorage = optionStorage ?? createOptionStorage({
+    userDataPath: electronApp.getPath('userData'),
+    schemaStorage: sharedStorage
+  })
+
+  const sharedPresetStorage = presetStorage ?? createPresetStorage({
+    userDataPath: electronApp.getPath('userData'),
+    schemaStorage: sharedStorage
+  })
+
+  ipcMainInstance.handle('schema:list', () => sharedStorage.listSchemas())
+  ipcMainInstance.handle('schema:load', (_event, applianceKey) => sharedStorage.loadSchema(applianceKey))
+  ipcMainInstance.handle('option:load', (_event, applianceKey) => sharedOptionStorage.loadOptions(applianceKey))
+  ipcMainInstance.handle('option:save', (_event, applianceKey, optionPayload) => sharedOptionStorage.saveOption(applianceKey, optionPayload))
+  ipcMainInstance.handle('option:delete', (_event, applianceKey, optionId) => sharedOptionStorage.deleteOption(applianceKey, optionId))
+  ipcMainInstance.handle('preset:load', (_event, applianceKey) => sharedPresetStorage.loadPresets(applianceKey))
+  ipcMainInstance.handle('preset:save', (_event, applianceKey, presetPayload) => sharedPresetStorage.savePreset(applianceKey, presetPayload))
+  ipcMainInstance.handle('preset:delete', (_event, applianceKey, presetId) => sharedPresetStorage.deletePreset(applianceKey, presetId))
 
   return {
-    storage,
-    optionStorage
+    storage: sharedStorage,
+    optionStorage: sharedOptionStorage,
+    presetStorage: sharedPresetStorage
   }
 }
 
