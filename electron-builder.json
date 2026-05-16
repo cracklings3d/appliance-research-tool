@@ -8,6 +8,15 @@
   "files": [
     "dist/**/*"
   ],
+  "extraResources": [
+    {
+      "from": "schemas",
+      "to": "schemas",
+      "filter": [
+        "*.schema.json"
+      ]
+    }
+  ],
   "win": {
     "target": [
       {

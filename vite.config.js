@@ -20,6 +20,10 @@ export default defineConfig({
           build: {
             outDir: resolve(__dirname, 'dist/main'),
             rollupOptions: {
+              input: {
+                index: resolve(__dirname, 'src/main/index.js'),
+                schemaStorage: resolve(__dirname, 'src/main/schemaStorage.js')
+              },
               external: ['electron']
             }
           }
