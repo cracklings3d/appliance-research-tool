@@ -47,9 +47,9 @@ _Avoid_: Website, retailer, vendor
 **N/A**:
 A value that is not accessible from the Source. When a Filter is applied, an N/A value should trigger a visible Warning in the GUI, not a failed match.
 
-## Common Dimensions
+## Commonly Used Dimensions
 
-These Dimensions exist across all Appliances:
+These Dimensions are commonly useful across Appliances, but each Appliance schema decides which Dimensions exist and which are required:
 
 | Dimension | Type | Description |
 |-----------|------|-------------|
