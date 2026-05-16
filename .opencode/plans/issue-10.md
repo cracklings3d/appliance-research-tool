@@ -174,7 +174,7 @@ Required object shape:
 Field rules:
 
 - `code`: required string from the fixed code set in section 4.7
-- `message`: required human-readable string suitable for logs/debug UI
+- `message`: required human-readable string suitable for logs/debug UI; exact `message` text is non-normative for this issue, while the envelope shape, field presence, and `code` values are the stable contract
 - `applianceKey`: required canonical appliance key string when the warning/failure is tied to one schema file; for issue #10, bootstrap/source warnings should be attached to the specific canonical key that still needs bootstrap rather than emitted as a global warning for all keys
 - exception for `UNKNOWN_APPLIANCE_KEY`: `loadSchema(applianceKey)` must echo the exact caller-supplied string argument in `failure.applianceKey` so the required field remains populated and diagnostics stay specific
 
@@ -206,6 +206,7 @@ Requirements:
 - every warning entry uses the canonical warning object shape defined above
 - `schemas` ordering must follow the same fixed canonical key order, filtered to only the keys that produced valid summaries
 - `warnings` ordering must also follow that fixed canonical key order; if a key hits a blocking problem, emit only the first terminal warning for that key so the array remains deterministic
+- per-key warning selection must follow the normative precedence table in section 4.7.1; never emit more than one terminal warning for the same canonical key in a single `listSchemas()` result
 
 Planned summary shape:
 
@@ -244,6 +245,7 @@ Requirements:
 - if local schema is missing but bootstrap succeeds, return the bootstrapped local schema as success
 - if the local schema already exists, later shipped-source unavailability must not prevent a successful load of that local schema
 - any condition serious enough to prevent returning a valid full schema is represented in `failure`, not in `warnings`
+- failure selection must follow the normative precedence table in section 4.7.2 so the same requested-key branch always yields the same single terminal `failure.code`
 
 Planned failure shape:
 
@@ -257,7 +259,23 @@ Planned failure shape:
 
 The failure object uses the same canonical field shape defined above.
 
-## 4.7 Warning/failure code strategy
+### IPC rejection policy
+
+For this issue, `listSchemas()` and `loadSchema(applianceKey)` must resolve with their stable envelopes for all expected schema-storage branches in this slice.
+
+That normalization requirement includes failures/exceptions arising from:
+
+- local schema-directory creation or verification
+- shipped/local schema path resolution
+- file existence checks used by bootstrap
+- shipped-to-local copy attempts
+- local file reads
+- JSON parsing
+- minimum contract validation
+
+These expected storage/bootstrap/path failures must be caught and normalized into the canonical warning/failure objects rather than surfaced as rejected IPC calls. Rejected IPC calls are reserved only for failures outside the intentional contract of this slice (for example, process-level crashes or handler-registration defects), not for any schema/bootstrap branch covered by sections 4.7 and 4.8.
+
+## 4.7 Warning/failure code strategy and precedence
 
 Every warning and failure object in this slice must use the canonical `{ code, message, applianceKey }` shape.
 
@@ -282,9 +300,63 @@ Code usage rules:
 - `SCHEMA_CONTRACT_INVALID` is the canonical result when a schema parses but fails the minimum required-field checklist below.
 - `SCHEMA_APPLIANCE_KEY_MISMATCH` is reserved for cases where a parsed schema document's `appliance` value does not match the canonical file/key being resolved.
 - `SHIPPED_SCHEMA_SOURCE_MISSING` and `SCHEMA_BOOTSTRAP_COPY_FAILED` are valid only when the local schema for the affected canonical key is missing and bootstrap is actually required for that key.
+- failure to create or verify `<userData>/schemas/` when bootstrap is required for a key maps to `SCHEMA_BOOTSTRAP_COPY_FAILED`; do not introduce a separate directory-setup code in this issue
 - if a canonical local schema file already exists, the implementation must not emit `SHIPPED_SCHEMA_SOURCE_MISSING` or `SCHEMA_BOOTSTRAP_COPY_FAILED` for that key.
 - in `listSchemas()`, shipped-source/bootstrap problems should be emitted per affected missing-local key rather than as a single global warning that obscures which keys remain available locally.
 - `loadSchema().warnings` remains `[]` for all outcomes in this issue scope; callers should not expect warning-bearing partial success semantics from `loadSchema()` yet.
+
+### 4.7.1 Normative per-key precedence for `listSchemas()`
+
+`listSchemas()` must process canonical keys in order (`washer`, `dryer`, `laundry-set`) and evaluate each key independently. For each key, apply the following precedence top-to-bottom. The first matching terminal branch wins, exactly one warning code may be emitted for that key, and later rows must not override it.
+
+| Precedence | Per-key branch in `listSchemas()` | Terminal per-key outcome |
+| --- | --- | --- |
+| 1 | Canonical local file already exists | Skip bootstrap rows 2-5 and continue with rows 6-11 against the local file |
+| 2 | Canonical local file is missing and ensuring/creating `<userData>/schemas/` fails | Emit warning `SCHEMA_BOOTSTRAP_COPY_FAILED` |
+| 3 | Canonical local file is missing, bootstrap is required, and the shipped schema source file cannot be resolved/found | Emit warning `SHIPPED_SCHEMA_SOURCE_MISSING` |
+| 4 | Canonical local file is missing, shipped source exists, and the bootstrap copy attempt fails | Emit warning `SCHEMA_BOOTSTRAP_COPY_FAILED` |
+| 5 | Canonical local file is missing, no earlier bootstrap error was selected, bootstrap attempt completes, and the canonical local file is still absent | Emit warning `LOCAL_SCHEMA_NOT_FOUND` |
+| 6 | Canonical local file exists but cannot be read | Emit warning `SCHEMA_FILE_UNREADABLE` |
+| 7 | Canonical local file is read but JSON parsing fails | Emit warning `SCHEMA_JSON_PARSE_FAILED` |
+| 8 | Parsed JSON root is not an object | Emit warning `SCHEMA_CONTRACT_INVALID` |
+| 9 | Parsed `schema.appliance` is missing, empty, non-string, or not one of the canonical MVP keys | Emit warning `SCHEMA_CONTRACT_INVALID` |
+| 10 | Parsed `schema.appliance` is a canonical MVP key but does not equal the canonical file key being enumerated | Emit warning `SCHEMA_APPLIANCE_KEY_MISMATCH` |
+| 11 | Parsed document fails any other minimum required-field check (`displayName`, `schemaVersion`, `dimensions`) | Emit warning `SCHEMA_CONTRACT_INVALID` |
+| 12 | None of the above branches match | Return a valid summary for that key and emit no warning |
+
+Rows 2-5 define the bootstrap precedence explicitly: when local is missing, bootstrap-source and bootstrap-copy failures win before `LOCAL_SCHEMA_NOT_FOUND`; `LOCAL_SCHEMA_NOT_FOUND` is only valid after bootstrap was required and no earlier bootstrap error code was selected.
+
+### 4.7.2 Normative precedence for `loadSchema(applianceKey)`
+
+`loadSchema(applianceKey)` must apply the following precedence top-to-bottom for the single requested key. The first matching branch wins, `failure.code` must be the single terminal code for the call, and later rows must not override it.
+
+| Precedence | Requested-key branch in `loadSchema(applianceKey)` | Terminal load outcome |
+| --- | --- | --- |
+| 1 | Caller-supplied `applianceKey` is outside `washer`, `dryer`, `laundry-set` | Return `ok: false` with `failure.code = UNKNOWN_APPLIANCE_KEY` |
+| 2 | Requested canonical local file already exists | Skip bootstrap rows 3-6 and continue with rows 7-12 against the local file |
+| 3 | Requested canonical local file is missing and ensuring/creating `<userData>/schemas/` fails | Return `ok: false` with `failure.code = SCHEMA_BOOTSTRAP_COPY_FAILED` |
+| 4 | Requested canonical local file is missing, bootstrap is required, and the shipped schema source file cannot be resolved/found | Return `ok: false` with `failure.code = SHIPPED_SCHEMA_SOURCE_MISSING` |
+| 5 | Requested canonical local file is missing, shipped source exists, and the bootstrap copy attempt fails | Return `ok: false` with `failure.code = SCHEMA_BOOTSTRAP_COPY_FAILED` |
+| 6 | Requested canonical local file is missing, no earlier bootstrap error was selected, bootstrap attempt completes, and the canonical local file is still absent | Return `ok: false` with `failure.code = LOCAL_SCHEMA_NOT_FOUND` |
+| 7 | Requested canonical local file exists but cannot be read | Return `ok: false` with `failure.code = SCHEMA_FILE_UNREADABLE` |
+| 8 | Requested canonical local file is read but JSON parsing fails | Return `ok: false` with `failure.code = SCHEMA_JSON_PARSE_FAILED` |
+| 9 | Parsed JSON root is not an object | Return `ok: false` with `failure.code = SCHEMA_CONTRACT_INVALID` |
+| 10 | Parsed `schema.appliance` is missing, empty, non-string, or not one of the canonical MVP keys | Return `ok: false` with `failure.code = SCHEMA_CONTRACT_INVALID` |
+| 11 | Parsed `schema.appliance` is a canonical MVP key but does not equal the requested `applianceKey` | Return `ok: false` with `failure.code = SCHEMA_APPLIANCE_KEY_MISMATCH` |
+| 12 | Parsed document fails any other minimum required-field check (`displayName`, `schemaVersion`, `dimensions`) | Return `ok: false` with `failure.code = SCHEMA_CONTRACT_INVALID` |
+| 13 | None of the above branches match | Return `ok: true` with the full schema and `failure: null` |
+
+Rows 3-6 define the bootstrap precedence explicitly for `loadSchema(applianceKey)`: when local is missing, directory-setup failure and shipped-source/copy failure win before `LOCAL_SCHEMA_NOT_FOUND`; `LOCAL_SCHEMA_NOT_FOUND` is only valid after bootstrap was required and no earlier bootstrap error code was selected.
+
+### 4.7.3 Required example terminal outcomes
+
+The following examples are normative and must match both implementation behavior and review expectations:
+
+- local missing + shipped source missing => `SHIPPED_SCHEMA_SOURCE_MISSING` (not `LOCAL_SCHEMA_NOT_FOUND`)
+- local missing + `<userData>/schemas/` creation fails => `SCHEMA_BOOTSTRAP_COPY_FAILED`
+- local missing + shipped source exists + copy attempt fails => `SCHEMA_BOOTSTRAP_COPY_FAILED`
+- local missing + bootstrap path completes without earlier bootstrap error but resulting canonical local file is still absent => `LOCAL_SCHEMA_NOT_FOUND`
+- parsed `washer.schema.json` containing `{ "appliance": "dryer", ... }` => `SCHEMA_APPLIANCE_KEY_MISMATCH` (not `SCHEMA_CONTRACT_INVALID`)
 
 ## 4.8 Validation boundary
 
@@ -301,18 +373,25 @@ Successful summary/load requires all of the following minimum rules to pass:
 | JSON syntax | File parses as syntactically valid JSON | Omit schema summary; add warning with `SCHEMA_JSON_PARSE_FAILED` | Return `ok: false` with `failure.code = SCHEMA_JSON_PARSE_FAILED` |
 | Document root | Parsed JSON root is an object (not array, string, number, boolean, or null) | Omit schema summary; add warning with `SCHEMA_CONTRACT_INVALID` | Return `ok: false` with `failure.code = SCHEMA_CONTRACT_INVALID` |
 | File readability | File can be read from disk | Omit schema summary; add warning with `SCHEMA_FILE_UNREADABLE` | Return `ok: false` with `failure.code = SCHEMA_FILE_UNREADABLE` |
-| `appliance` | Required non-empty string and one of `washer`, `dryer`, `laundry-set` | Omit schema summary; add warning with `SCHEMA_CONTRACT_INVALID` | Return `ok: false` with `failure.code = SCHEMA_CONTRACT_INVALID` |
+| `appliance` canonicality | Required non-empty string and one of `washer`, `dryer`, `laundry-set` | Omit schema summary; add warning with `SCHEMA_CONTRACT_INVALID` | Return `ok: false` with `failure.code = SCHEMA_CONTRACT_INVALID` |
 | `displayName` | Required non-empty string | Omit schema summary; add warning with `SCHEMA_CONTRACT_INVALID` | Return `ok: false` with `failure.code = SCHEMA_CONTRACT_INVALID` |
 | `schemaVersion` | Required non-empty string | Omit schema summary; add warning with `SCHEMA_CONTRACT_INVALID` | Return `ok: false` with `failure.code = SCHEMA_CONTRACT_INVALID` |
 | `dimensions` | Required array | Omit schema summary; add warning with `SCHEMA_CONTRACT_INVALID` | Return `ok: false` with `failure.code = SCHEMA_CONTRACT_INVALID` |
-| Requested key match | For `loadSchema(applianceKey)`, parsed `schema.appliance` must equal requested `applianceKey` | If encountered while enumerating a canonical file for that key, omit summary and add warning with `SCHEMA_APPLIANCE_KEY_MISMATCH` | Return `ok: false` with `failure.code = SCHEMA_APPLIANCE_KEY_MISMATCH` |
+| Canonical key match | After `schema.appliance` passes the canonicality rule above, it must equal the canonical file/requested key being resolved | If encountered while enumerating a canonical file for that key, omit summary and add warning with `SCHEMA_APPLIANCE_KEY_MISMATCH` | Return `ok: false` with `failure.code = SCHEMA_APPLIANCE_KEY_MISMATCH` |
 
 Additional bootstrap/path outcomes that must stay deterministic:
 
 - requested key outside the canonical MVP set returns `UNKNOWN_APPLIANCE_KEY`, with `failure.applianceKey` set to the exact caller-supplied string argument
 - missing shipped schema directory at runtime returns `SHIPPED_SCHEMA_SOURCE_MISSING` only for canonical keys whose local schema file is missing and therefore still require bootstrap
+- failure to create or verify `<userData>/schemas/` when bootstrap is required returns `SCHEMA_BOOTSTRAP_COPY_FAILED`
 - copy failure during bootstrap returns `SCHEMA_BOOTSTRAP_COPY_FAILED` only for canonical keys whose local schema file is missing and whose bootstrap copy attempt actually fails
-- missing canonical local schema file after bootstrap attempt returns `LOCAL_SCHEMA_NOT_FOUND`
+- missing canonical local schema file after bootstrap attempt returns `LOCAL_SCHEMA_NOT_FOUND` only if no earlier bootstrap error code has already been selected for that key
+
+Precedence note for `appliance` validation:
+
+- if `schema.appliance` is missing, empty, non-string, or outside the canonical set, the result is `SCHEMA_CONTRACT_INVALID`
+- if `schema.appliance` is one of the canonical keys but does not match the canonical file/requested key, the result is `SCHEMA_APPLIANCE_KEY_MISMATCH`
+- canonical-but-mismatched `schema.appliance` must never be downgraded to `SCHEMA_CONTRACT_INVALID`
 
 This means malformed local schemas that parse but miss required fields are never treated as successful loads: `listSchemas()` omits them with a warning, and `loadSchema()` fails the call with the same canonical contract-invalid code.
 
@@ -393,31 +472,40 @@ Required test coverage:
      - shipped schema present
      - result returns `ok: true` and full schema
 7. **Failures apply only to keys that still need bootstrap**
-     - at least one canonical local schema exists and at least one other canonical local schema is missing
-     - shipped schema source is missing or copy fails
-     - existing-local keys still succeed in `listSchemas()` / `loadSchema()`
-     - only missing-local keys receive `SHIPPED_SCHEMA_SOURCE_MISSING`, `SCHEMA_BOOTSTRAP_COPY_FAILED`, or `LOCAL_SCHEMA_NOT_FOUND`
-8. **`loadSchema(applianceKey)` returns structured failure for bad requested schema outcomes**
-       - invalid JSON
-       - parseable non-object JSON root
-       - unreadable/missing requested file after bootstrap attempt
-       - unknown appliance key
-       - `UNKNOWN_APPLIANCE_KEY` returns `failure.applianceKey` equal to the exact caller-supplied string argument
-       - parseable schema missing `displayName`, `schemaVersion`, `appliance`, or `dimensions`
-       - parsed schema whose `appliance` does not match the requested key
-       - all return `ok: false` with `failure.code`
-9. **Main-process IPC contract is registered explicitly**
-     - test `src/main/index.js` (or a narrow extracted registration helper) with mocked Electron APIs
-     - verify `ipcMain.handle('schema:list', handler)` and `ipcMain.handle('schema:load', handler)` are registered
-     - avoid relying only on helper tests that never exercise IPC registration
-10. **Preload exposure preserves existing APIs and adds schema methods**
-     - test `src/preload/index.js` with mocked `contextBridge`/`ipcRenderer`
-     - verify `electronAPI` still exposes `platform`, `versions`, and `onUpdateCounter`
-     - verify `electronAPI.listSchemas` and `electronAPI.loadSchema` are exposed and invoke `schema:list` / `schema:load`
-11. **Runtime path resolution is covered in both dev and packaged modes**
-     - verify development resolution finds repo-root `schemas/` from the built main-process runtime location rather than incorrectly depending on `src/main/`
-     - verify packaged runtime resolves shipped schemas from `${process.resourcesPath}/schemas`
-     - avoid leaving either dev-path or packaged-path logic untested
+      - at least one canonical local schema exists and at least one other canonical local schema is missing
+      - shipped schema source is missing or copy fails
+      - existing-local keys still succeed in `listSchemas()` / `loadSchema()`
+      - only missing-local keys receive `SHIPPED_SCHEMA_SOURCE_MISSING`, `SCHEMA_BOOTSTRAP_COPY_FAILED`, or `LOCAL_SCHEMA_NOT_FOUND`
+8. **Bootstrap precedence is deterministic for missing-local branches**
+      - local missing + shipped source missing returns `SHIPPED_SCHEMA_SOURCE_MISSING`
+      - local missing + directory creation failure returns `SCHEMA_BOOTSTRAP_COPY_FAILED`
+      - local missing + copy failure returns `SCHEMA_BOOTSTRAP_COPY_FAILED`
+      - local missing + bootstrap path completes but local file still absent returns `LOCAL_SCHEMA_NOT_FOUND`
+      - no branch emits more than one terminal code for the same key
+9. **`loadSchema(applianceKey)` returns structured failure for bad requested schema outcomes**
+        - invalid JSON
+        - parseable non-object JSON root
+        - unreadable/missing requested file after bootstrap attempt
+        - unknown appliance key
+        - `UNKNOWN_APPLIANCE_KEY` returns `failure.applianceKey` equal to the exact caller-supplied string argument
+        - parseable schema missing `displayName`, `schemaVersion`, `appliance`, or `dimensions`
+        - parsed schema whose `appliance` is canonical but does not match the requested key returns `SCHEMA_APPLIANCE_KEY_MISMATCH`, not `SCHEMA_CONTRACT_INVALID`
+        - all return `ok: false` with `failure.code`
+10. **Expected storage failures are normalized instead of rejected IPC calls**
+      - force directory-creation, copy, read, or parse failures inside the schema-storage path
+      - verify `listSchemas()` / `loadSchema(applianceKey)` resolve stable envelopes rather than rejecting for these covered branches
+11. **Main-process IPC contract is registered explicitly**
+      - test `src/main/index.js` (or a narrow extracted registration helper) with mocked Electron APIs
+      - verify `ipcMain.handle('schema:list', handler)` and `ipcMain.handle('schema:load', handler)` are registered
+      - avoid relying only on helper tests that never exercise IPC registration
+12. **Preload exposure preserves existing APIs and adds schema methods**
+      - test `src/preload/index.js` with mocked `contextBridge`/`ipcRenderer`
+      - verify `electronAPI` still exposes `platform`, `versions`, and `onUpdateCounter`
+      - verify `electronAPI.listSchemas` and `electronAPI.loadSchema` are exposed and invoke `schema:list` / `schema:load`
+13. **Runtime path resolution is covered in both dev and packaged modes**
+      - verify development resolution finds repo-root `schemas/` from the built main-process runtime location rather than incorrectly depending on `src/main/`
+      - verify packaged runtime resolves shipped schemas from `${process.resourcesPath}/schemas`
+      - avoid leaving either dev-path or packaged-path logic untested
 
 ## 8. Acceptance checklist mapped to issue #10
 
@@ -432,18 +520,20 @@ Required test coverage:
 - [ ] `listSchemas()` still returns available schema references when another schema file is missing/invalid/unreadable, with per-file warnings instead of unexpected IPC rejection.
 - [ ] Existing local schemas remain listable/loadable even when the shipped schema source later becomes unavailable.
 - [ ] When shipped schema assets are unavailable or bootstrap copy fails, warnings/failures apply only to canonical keys whose local schema file is still missing.
+- [ ] When bootstrap is required, failure to create or verify `<userData>/schemas/` maps to `SCHEMA_BOOTSTRAP_COPY_FAILED`.
+- [ ] Terminal bootstrap precedence is deterministic: shipped-source missing wins before `LOCAL_SCHEMA_NOT_FOUND`, bootstrap copy/setup failure wins before `LOCAL_SCHEMA_NOT_FOUND`, and `LOCAL_SCHEMA_NOT_FOUND` is used only when no earlier bootstrap error code applies.
 - [ ] A schema with a parseable but non-object root, or missing/invalidating any minimum required field (`appliance`, `displayName`, `schemaVersion`, `dimensions`), is omitted from `listSchemas()` with `SCHEMA_CONTRACT_INVALID` and never returned as a partial summary.
 - [ ] `loadSchema(applianceKey)` returns a stable envelope with top-level `ok`, `schema`, `warnings`, and `failure`.
 - [ ] `loadSchema(applianceKey)` uses `warnings` only for non-fatal success metadata; for issue #10 the field is always `[]`, and blocking conditions are returned via `failure` instead.
 - [ ] Missing local schema + successful bootstrap returns a successful loaded schema.
-- [ ] Missing/invalid/unreadable/unbootstrappable requested schema outcomes return structured business results rather than unexpected IPC rejection.
-- [ ] `loadSchema(applianceKey)` reserves `SCHEMA_JSON_PARSE_FAILED` for syntactically invalid JSON only; a parseable non-object root or missing/invalid minimum required field fails with `SCHEMA_CONTRACT_INVALID`, and an `appliance` mismatch fails with `SCHEMA_APPLIANCE_KEY_MISMATCH`.
+- [ ] Missing/invalid/unreadable/unbootstrappable requested schema outcomes return structured business results rather than unexpected IPC rejection, including expected directory-setup/path/bootstrap exceptions covered by this slice.
+- [ ] `loadSchema(applianceKey)` reserves `SCHEMA_JSON_PARSE_FAILED` for syntactically invalid JSON only; a parseable non-object root or missing/invalid minimum required field fails with `SCHEMA_CONTRACT_INVALID`, and a canonical-but-mismatched `appliance` fails with `SCHEMA_APPLIANCE_KEY_MISMATCH`.
 - [ ] `UNKNOWN_APPLIANCE_KEY` failures include `failure.applianceKey` equal to the exact caller-supplied string argument.
 - [ ] Packaged builds ship `schemas/*.schema.json` via `electron-builder` and runtime resolution uses `${process.resourcesPath}/schemas`.
 - [ ] Development runtime resolution is verified against the built main-process runtime context so repo-root `schemas/` still resolves correctly outside `src/main/`.
 - [ ] `src/main/index.js` registers `ipcMain.handle('schema:list', ...)` and `ipcMain.handle('schema:load', ...)`.
 - [ ] `src/preload/index.js` preserves `platform`, `versions`, and `onUpdateCounter`, and adds `listSchemas()` / `loadSchema(applianceKey)` on the same `window.electronAPI` object.
-- [ ] Every warning and failure object uses the canonical `{ code, message, applianceKey }` shape, using only the fixed canonical code set from section 4.7.
+- [ ] Every warning and failure object uses the canonical `{ code, message, applianceKey }` shape, using only the fixed canonical code set from section 4.7; exact `message` text is non-normative.
 
 ## 9. Reviewer notes
 
@@ -455,6 +545,7 @@ Reviewers should reject implementations that:
 - expose file system paths or extra mutation APIs through preload
 - remove or rename existing non-schema preload APIs instead of extending them
 - use IPC rejection for expected business failures covered by the issue
+- invent or reorder terminal warning/failure precedence outside section 4.7
 - broaden scope into **Option** or preset persistence
 - couple schema storage logic tightly to `BrowserWindow` lifecycle code
 
