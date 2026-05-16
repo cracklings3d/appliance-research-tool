@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 
+const { createOptionStorage } = require('./optionStorage')
 const { createSchemaStorage } = require('./schemaStorage')
 
 process.env.DIST_ELECTRON = path.join(__dirname, '../..')
@@ -41,12 +42,22 @@ function registerIpcHandlers({
     isPackaged: electronApp.isPackaged,
     resourcesPath: process.resourcesPath,
     runtimeDir: __dirname
+  }),
+  optionStorage = createOptionStorage({
+    userDataPath: electronApp.getPath('userData'),
+    schemaStorage: storage
   })
 } = {}) {
   ipcMainInstance.handle('schema:list', () => storage.listSchemas())
   ipcMainInstance.handle('schema:load', (_event, applianceKey) => storage.loadSchema(applianceKey))
+  ipcMainInstance.handle('option:load', (_event, applianceKey) => optionStorage.loadOptions(applianceKey))
+  ipcMainInstance.handle('option:save', (_event, applianceKey, optionPayload) => optionStorage.saveOption(applianceKey, optionPayload))
+  ipcMainInstance.handle('option:delete', (_event, applianceKey, optionId) => optionStorage.deleteOption(applianceKey, optionId))
 
-  return storage
+  return {
+    storage,
+    optionStorage
+  }
 }
 
 function startApplication() {

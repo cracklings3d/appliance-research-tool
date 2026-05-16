@@ -15,6 +15,11 @@ test('main process registers schema IPC handlers explicitly', () => {
       failure: null
     })
   }
+  const optionStorageInstance = {
+    loadOptions: async () => ({ ok: true, options: [], warnings: [], failure: null }),
+    saveOption: async () => ({ ok: true, option: null, warnings: [], validationErrors: [], failure: null }),
+    deleteOption: async () => ({ ok: true, deletedOptionId: null, affectedLaundrySetOptionIds: [], repairedLaundrySetOptionIds: [], warnings: [], failure: null })
+  }
 
   const fakeElectron = {
     app: {
@@ -36,17 +41,21 @@ test('main process registers schema IPC handlers explicitly', () => {
     electron: fakeElectron,
     './schemaStorage': {
       createSchemaStorage: () => storageInstance
+    },
+    './optionStorage': {
+      createOptionStorage: () => optionStorageInstance
     }
   })
 
   indexModule.registerIpcHandlers({
     electronApp: fakeElectron.app,
     ipcMainInstance: fakeElectron.ipcMain,
-    storage: storageInstance
+    storage: storageInstance,
+    optionStorage: optionStorageInstance
   })
 
   assert.deepEqual(
     handledChannels.map((entry) => entry.channel),
-    ['schema:list', 'schema:load']
+    ['schema:list', 'schema:load', 'option:load', 'option:save', 'option:delete']
   )
 })
