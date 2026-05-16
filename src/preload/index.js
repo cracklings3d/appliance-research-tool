@@ -16,7 +16,10 @@ function createElectronApi({
       renderer.on('update-counter', (_event, value) => callback(value))
     },
     listSchemas: () => renderer.invoke('schema:list'),
-    loadSchema: (applianceKey) => renderer.invoke('schema:load', applianceKey)
+    loadSchema: (applianceKey) => renderer.invoke('schema:load', applianceKey),
+    loadOptions: (applianceKey) => renderer.invoke('option:load', applianceKey),
+    saveOption: (applianceKey, optionPayload) => renderer.invoke('option:save', applianceKey, optionPayload),
+    deleteOption: (applianceKey, optionId) => renderer.invoke('option:delete', applianceKey, optionId)
   }
 }
 
