@@ -7,7 +7,8 @@
     "dev": "npx vite",
     "build": "npx vite build",
     "electron:build": "npm run build && npx electron-builder",
-    "electron:dev": "npx vite"
+    "electron:dev": "npx vite",
+    "test": "node --test"
   },
   "keywords": [
     "appliance",

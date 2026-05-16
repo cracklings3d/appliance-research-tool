@@ -1,5 +1,7 @@
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
+
+const { createSchemaStorage } = require('./schemaStorage')
 
 process.env.DIST_ELECTRON = path.join(__dirname, '../..')
 process.env.DIST = path.join(process.env.DIST_ELECTRON, 'dist')
@@ -31,7 +33,30 @@ function createWindow() {
   }
 }
 
-app.whenReady().then(createWindow)
+function registerIpcHandlers({
+  electronApp = app,
+  ipcMainInstance = ipcMain,
+  storage = createSchemaStorage({
+    userDataPath: electronApp.getPath('userData'),
+    isPackaged: electronApp.isPackaged,
+    resourcesPath: process.resourcesPath,
+    runtimeDir: __dirname
+  })
+} = {}) {
+  ipcMainInstance.handle('schema:list', () => storage.listSchemas())
+  ipcMainInstance.handle('schema:load', (_event, applianceKey) => storage.loadSchema(applianceKey))
+
+  return storage
+}
+
+function startApplication() {
+  app.whenReady().then(() => {
+    registerIpcHandlers()
+    createWindow()
+  })
+}
+
+startApplication()
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
@@ -40,3 +65,9 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow()
 })
+
+module.exports = {
+  createWindow,
+  registerIpcHandlers,
+  startApplication
+}
