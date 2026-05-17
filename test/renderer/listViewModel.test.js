@@ -385,12 +385,18 @@ test('buildLoadSuccessView treats successful warnings as behaviorally inert', as
 test('renderer shell template renders labels and string values as plain text only', async () => {
   const fs = require('node:fs/promises')
   const appVuePath = path.join(__dirname, '..', '..', 'src', 'renderer', 'src', 'App.vue')
+  const comparisonPanelPath = path.join(__dirname, '..', '..', 'src', 'renderer', 'src', 'components', 'ComparisonPanel.vue')
+  const optionListPanelPath = path.join(__dirname, '..', '..', 'src', 'renderer', 'src', 'components', 'OptionListPanel.vue')
   const appVue = await fs.readFile(appVuePath, 'utf8')
+  const comparisonPanelVue = await fs.readFile(comparisonPanelPath, 'utf8')
+  const optionListPanelVue = await fs.readFile(optionListPanelPath, 'utf8')
 
   assert.doesNotMatch(appVue, /v-html\s*=|innerHTML/)
+  assert.doesNotMatch(comparisonPanelVue, /v-html\s*=|innerHTML/)
+  assert.doesNotMatch(optionListPanelVue, /v-html\s*=|innerHTML/)
   assert.match(appVue, /\{\{ item\.label \}\}/)
-  assert.match(appVue, /\{\{ column\.label \}\}/)
-  assert.match(appVue, /<span v-else>\{\{ cell\.text \}\}<\/span>/)
+  assert.match(comparisonPanelVue, /<span v-else>\{\{ cell\.text \}\}<\/span>/)
+  assert.match(optionListPanelVue, /\{\{ column\.label \}\}/)
 })
 
 test('buildLoadSuccessView returns empty or ready and rejects malformed rows', async () => {
