@@ -3,7 +3,7 @@
     <header class="app-header">
       <div>
         <h1>Appliance Research Tool</h1>
-        <p class="subtitle">Browse Appliance Options by schema-defined Dimensions.</p>
+        <p class="subtitle">Browse Appliance Options and compare them side-by-side by schema-defined Dimensions.</p>
       </div>
     </header>
 
@@ -14,75 +14,55 @@
           :key="item.key"
           type="button"
           class="appliance-nav__button"
-          :class="{ 'appliance-nav__button--active': item.key === shellState.activeKey }"
+          :class="{ 'appliance-nav__button--active': item.key === workspaceState.activeKey }"
           @click="selectAppliance(item.key)"
         >
           {{ item.label }}
         </button>
       </nav>
 
-      <section class="list-panel" aria-live="polite">
-        <header class="list-panel__header">
-          <h2>{{ activeLabel }}</h2>
-          <p class="list-panel__description">Read-only Appliance list view</p>
-        </header>
+      <div class="workspace-grid">
+        <OptionListPanel
+          :active-label="activeLabel"
+          :view="view"
+          :selected-option-ids="comparison.selectedOptionIds"
+          @retry="retryLoad"
+          @toggle-option="toggleOptionSelection"
+        />
 
-        <div v-if="view.status === 'loading'" class="state-card">
-          <p>{{ view.message }}</p>
-        </div>
-
-        <div v-else-if="view.status === 'error'" class="state-card state-card--error">
-          <p>{{ view.message }}</p>
-          <button type="button" class="retry-button" @click="retryLoad">Retry</button>
-        </div>
-
-        <div v-else-if="view.status === 'empty'" class="state-card">
-          <p>{{ view.message }}</p>
-        </div>
-
-        <div v-else class="table-wrap">
-          <table class="option-table">
-            <thead>
-              <tr>
-                <th v-for="column in view.columns" :key="column.id" scope="col">
-                  {{ column.label }}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in view.rows" :key="row.key">
-                <td v-for="cell in row.cells" :key="cell.columnId">
-                  <span
-                    v-if="cell.kind === 'na'"
-                    :class="cell.className"
-                    :data-evaluation-state="cell.dataEvaluationState"
-                  >
-                    {{ cell.text }}
-                  </span>
-                  <span v-else>{{ cell.text }}</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+        <ComparisonPanel
+          :active-label="activeLabel"
+          :comparison="comparison"
+          :view-status="view.status"
+          @add-dimension="addComparedDimension"
+          @remove-dimension="removeComparedDimension"
+          @apply-preset="applyPreset"
+          @delete-preset="deletePreset"
+          @update-save-name="setPresetSaveName"
+          @save-preset="savePreset"
+          @retry-presets="retryPresetLoad"
+        />
+      </div>
     </main>
   </div>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { createAppShellController, createInitialState } from './shell/appShellController.mjs'
+import ComparisonPanel from './components/ComparisonPanel.vue'
+import OptionListPanel from './components/OptionListPanel.vue'
+import { createComparisonWorkspaceController, createInitialState } from './composables/comparisonWorkspace.mjs'
 
-const shellState = ref(createInitialState())
-const controller = createAppShellController()
+const workspaceState = ref(createInitialState())
+const controller = createComparisonWorkspaceController()
 
 let unsubscribe = () => {}
 
-const navigationItems = computed(() => shellState.value.navigationItems)
-const view = computed(() => shellState.value.view)
+const navigationItems = computed(() => workspaceState.value.navigationItems)
+const view = computed(() => workspaceState.value.view)
+const comparison = computed(() => workspaceState.value.comparison)
 const activeLabel = computed(() => {
-  const activeItem = shellState.value.navigationItems.find((item) => item.key === shellState.value.activeKey)
+  const activeItem = workspaceState.value.navigationItems.find((item) => item.key === workspaceState.value.activeKey)
   return activeItem ? activeItem.label : 'Washer'
 })
 
@@ -94,9 +74,41 @@ function retryLoad() {
   void controller.retry()
 }
 
+function retryPresetLoad() {
+  void controller.retryPresetLoad()
+}
+
+function toggleOptionSelection(optionId) {
+  controller.toggleOptionSelection(optionId)
+}
+
+function addComparedDimension(dimensionKey) {
+  controller.addComparedDimension(dimensionKey)
+}
+
+function removeComparedDimension(dimensionKey) {
+  controller.removeComparedDimension(dimensionKey)
+}
+
+function applyPreset(presetId) {
+  controller.applyPreset(presetId)
+}
+
+function setPresetSaveName(name) {
+  controller.setPresetSaveName(name)
+}
+
+function savePreset() {
+  void controller.savePreset()
+}
+
+function deletePreset(presetId) {
+  void controller.deletePreset(presetId)
+}
+
 onMounted(() => {
   unsubscribe = controller.subscribe((nextState) => {
-    shellState.value = nextState
+    workspaceState.value = nextState
   })
 
   void controller.boot()
@@ -107,3 +119,10 @@ onBeforeUnmount(() => {
   controller.dispose()
 })
 </script>
+
+<style scoped>
+.workspace-grid {
+  display: grid;
+  gap: 1rem;
+}
+</style>
