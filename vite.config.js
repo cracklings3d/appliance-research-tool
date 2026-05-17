@@ -22,6 +22,8 @@ export default defineConfig({
             rollupOptions: {
               input: {
                 index: resolve(__dirname, 'src/main/index.js'),
+                optionStorage: resolve(__dirname, 'src/main/optionStorage.js'),
+                presetStorage: resolve(__dirname, 'src/main/presetStorage.js'),
                 schemaStorage: resolve(__dirname, 'src/main/schemaStorage.js')
               },
               external: ['electron']
