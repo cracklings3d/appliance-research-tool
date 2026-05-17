@@ -4,13 +4,160 @@
   box-sizing: border-box;
 }
 
+html,
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   line-height: 1.5;
   color: #333;
-  background: #f5f5f5;
+  background: #eef2f7;
 }
 
 #app {
   min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  background: #20344d;
+  color: #fff;
+  padding: 1.5rem 2rem;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.18);
+}
+
+.app-header h1 {
+  font-size: 1.5rem;
+}
+
+.subtitle {
+  margin-top: 0.35rem;
+  color: #d5e2f2;
+}
+
+.app-main {
+  flex: 1;
+  padding: 1.5rem 2rem 2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.appliance-nav {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.appliance-nav__button {
+  border: 1px solid #9cb0c9;
+  background: #fff;
+  color: #20344d;
+  border-radius: 999px;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+}
+
+.appliance-nav__button--active {
+  background: #20344d;
+  color: #fff;
+  border-color: #20344d;
+}
+
+.list-panel {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  padding: 1.25rem;
+  min-height: 20rem;
+}
+
+.list-panel__header {
+  margin-bottom: 1rem;
+}
+
+.list-panel__description {
+  color: #526173;
+  margin-top: 0.25rem;
+}
+
+.state-card {
+  border: 1px solid #d5dde8;
+  border-radius: 12px;
+  padding: 1rem;
+  background: #f8fafc;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.state-card--error {
+  border-color: #d97777;
+  background: #fff1f1;
+}
+
+.retry-button {
+  width: fit-content;
+  border: none;
+  border-radius: 10px;
+  background: #20344d;
+  color: #fff;
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.option-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.option-table th,
+.option-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.85rem 0.75rem;
+  border-bottom: 1px solid #e4eaf1;
+}
+
+.option-table th {
+  color: #20344d;
+  font-size: 0.95rem;
+}
+
+.evaluation-token {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.evaluation-token--na {
+  background: #e5e7eb;
+  color: #4b5563;
+}
+
+@media (max-width: 720px) {
+  .app-header,
+  .app-main {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .list-panel {
+    padding: 1rem;
+  }
 }

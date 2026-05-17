@@ -1,0 +1,238 @@
+import {
+  FALLBACK_NAVIGATION_LABELS,
+  createNavigationItems,
+  validateElectronApi,
+  resolveBootNavigation,
+  buildLoadSuccessView
+} from './listViewModel.mjs'
+
+export function createInitialState() {
+  return {
+    navigationItems: createNavigationItems(),
+    activeKey: 'washer',
+    view: {
+      status: 'loading',
+      message: 'Loading Washer…',
+      columns: [],
+      rows: []
+    }
+  }
+}
+
+export function createAppShellController({ apiProvider } = {}) {
+  const provideApi = typeof apiProvider === 'function'
+    ? apiProvider
+    : () => (typeof window !== 'undefined' ? window.electronAPI : undefined)
+
+  let state = createInitialState()
+  let loadRequestId = 0
+  let disposed = false
+  const listeners = new Set()
+
+  function emit() {
+    if (disposed) {
+      return
+    }
+
+    for (const listener of listeners) {
+      listener(state)
+    }
+  }
+
+  function setState(nextState) {
+    state = nextState
+    emit()
+  }
+
+  function updateNavigation(labels) {
+    state = {
+      ...state,
+      navigationItems: createNavigationItems(labels)
+    }
+    emit()
+  }
+
+  async function boot() {
+    const electronApi = provideApi()
+    const apiValidation = validateElectronApi(electronApi, ['listSchemas', 'loadSchema', 'loadOptions'])
+
+    if (!apiValidation.ok) {
+      setErrorState('washer', apiValidation.category, { labels: { ...FALLBACK_NAVIGATION_LABELS } })
+      return state
+    }
+
+    let discoveryResult
+
+    try {
+      discoveryResult = await electronApi.listSchemas()
+    } catch (_error) {
+      setErrorState('washer', 'Schema discovery unavailable', { labels: { ...FALLBACK_NAVIGATION_LABELS } })
+      return state
+    }
+
+    const navigationResult = resolveBootNavigation(discoveryResult)
+
+    if (!navigationResult.ok) {
+      setErrorState('washer', navigationResult.category, { labels: navigationResult.labels })
+      return state
+    }
+
+    updateNavigation(navigationResult.labels)
+    await loadAppliance(navigationResult.activeKey)
+    return state
+  }
+
+  async function selectAppliance(applianceKey) {
+    if (applianceKey === state.activeKey && state.view.status !== 'error') {
+      return state
+    }
+
+    await loadAppliance(applianceKey)
+    return state
+  }
+
+  async function retry() {
+    await loadAppliance(state.activeKey)
+    return state
+  }
+
+  async function loadAppliance(applianceKey) {
+    const electronApi = provideApi()
+    const apiValidation = validateElectronApi(electronApi, ['loadSchema', 'loadOptions'])
+
+    if (!apiValidation.ok) {
+      setErrorState(applianceKey, apiValidation.category)
+      return state
+    }
+
+    const requestId = loadRequestId + 1
+    loadRequestId = requestId
+
+    setState({
+      ...state,
+      activeKey: applianceKey,
+      view: {
+        status: 'loading',
+        message: `Loading ${resolveActiveLabel(applianceKey)}…`,
+        columns: [],
+        rows: []
+      }
+    })
+
+    let schemaResult
+
+    try {
+      schemaResult = await electronApi.loadSchema(applianceKey)
+    } catch (_error) {
+      if (isStale(requestId)) {
+        return state
+      }
+
+      setErrorState(applianceKey, 'Schema unavailable or invalid')
+      return state
+    }
+
+    if (isStale(requestId)) {
+      return state
+    }
+
+    if (!schemaResult || typeof schemaResult !== 'object' || schemaResult.ok !== true || !schemaResult.schema || typeof schemaResult.schema !== 'object') {
+      setErrorState(applianceKey, 'Schema unavailable or invalid')
+      return state
+    }
+
+    let optionsResult
+
+    try {
+      optionsResult = await electronApi.loadOptions(applianceKey)
+    } catch (_error) {
+      if (isStale(requestId)) {
+        return state
+      }
+
+      setErrorState(applianceKey, 'Option data unavailable or invalid')
+      return state
+    }
+
+    if (isStale(requestId)) {
+      return state
+    }
+
+    if (!optionsResult || typeof optionsResult !== 'object' || optionsResult.ok !== true || !Array.isArray(optionsResult.options)) {
+      setErrorState(applianceKey, 'Option data unavailable or invalid')
+      return state
+    }
+
+    const viewResult = buildLoadSuccessView(schemaResult.schema, optionsResult.options, applianceKey)
+
+    if (!viewResult.ok) {
+      setErrorState(applianceKey, viewResult.category)
+      return state
+    }
+
+    setState({
+      ...state,
+      activeKey: applianceKey,
+      view: {
+        status: viewResult.status,
+        message: viewResult.status === 'empty'
+          ? `No Options available for ${resolveActiveLabel(applianceKey)} yet.`
+          : '',
+        columns: viewResult.columns,
+        rows: viewResult.rows
+      }
+    })
+
+    return state
+  }
+
+  function setErrorState(applianceKey, category, { labels } = {}) {
+    const nextLabels = labels || Object.fromEntries(state.navigationItems.map((item) => [item.key, item.label]))
+
+    setState({
+      navigationItems: createNavigationItems(nextLabels),
+      activeKey: applianceKey,
+      view: {
+        status: 'error',
+        message: `${resolveLabelFromItems(createNavigationItems(nextLabels), applianceKey)} could not be loaded. ${category}.`,
+        columns: [],
+        rows: []
+      }
+    })
+  }
+
+  function resolveActiveLabel(applianceKey) {
+    return resolveLabelFromItems(state.navigationItems, applianceKey)
+  }
+
+  function isStale(requestId) {
+    return disposed || requestId !== loadRequestId
+  }
+
+  return {
+    subscribe(listener) {
+      listeners.add(listener)
+      listener(state)
+
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+    getState() {
+      return state
+    },
+    boot,
+    selectAppliance,
+    retry,
+    dispose() {
+      disposed = true
+      loadRequestId += 1
+      listeners.clear()
+    }
+  }
+}
+
+function resolveLabelFromItems(items, applianceKey) {
+  const item = items.find((entry) => entry.key === applianceKey)
+  return item ? item.label : FALLBACK_NAVIGATION_LABELS[applianceKey] || applianceKey
+}
