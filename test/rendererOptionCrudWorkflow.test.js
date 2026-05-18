@@ -57,7 +57,7 @@ test('prepareDeleteConfirmation reloads fresh laundry-set data for each washer d
   })
 
   assert.deepEqual(loadCalls, ['laundry-set', 'laundry-set'])
-  assert.match(firstPreview.message, /1 Laundry Set Option still reference this washer/i)
+  assert.match(firstPreview.message, /1 Laundry Set Option still references this washer/i)
   assert.match(secondPreview.message, /removes only the selected Washer Option/i)
 })
 
