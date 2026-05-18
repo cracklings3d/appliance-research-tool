@@ -641,7 +641,7 @@ test('laundry-set loads supporting washer and dryer dependencies for delegated r
   assert.equal(controller.getState().view.rows[0].cells[1].text, '10 kg')
 })
 
-test('laundry-set supporting dependency failure keeps incomplete rows visible without crashing the active view', async () => {
+test('laundry-set supporting dependency failure routes the active view to error', async () => {
   const { createAppShellController } = await loadControllerModule()
   const controller = createAppShellController({
     apiProvider: () => ({
@@ -681,9 +681,6 @@ test('laundry-set supporting dependency failure keeps incomplete rows visible wi
 
   await controller.selectAppliance('laundry-set')
 
-  assert.equal(controller.getState().view.status, 'ready')
-  assert.equal(controller.getState().view.rows.length, 1)
-  assert.equal(controller.getState().view.rows[0].isIncomplete, true)
-  assert.equal(controller.getState().view.rows[0].warning.text, 'Warning')
-  assert.equal(controller.getState().view.rows[0].cells[1].text, 'N/A')
+  assert.equal(controller.getState().view.status, 'error')
+  assert.match(controller.getState().view.message, /Laundry Set could not be loaded\. Schema unavailable or invalid\./)
 })
