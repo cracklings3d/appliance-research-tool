@@ -616,3 +616,43 @@ test('comparison cell derivation renders known, na, empty, and direct pointer va
     { kind: 'empty', text: '—' }
   )
 })
+
+test('filters do not clear selected comparison Option ids and comparison ordering follows canonical rows', async () => {
+  const { createComparisonWorkspaceController } = await loadComparisonWorkspaceModule()
+  const controller = createComparisonWorkspaceController({
+    apiProvider: () => ({
+      listSchemas: async () => ({ schemas: [{ applianceKey: 'washer', displayName: 'Washer' }] }),
+      loadSchema: async () => ({
+        ok: true,
+        schema: createSchema('washer')
+      }),
+      loadOptions: async () => ({
+        ok: true,
+        options: [
+          createOption('washer-b', {
+            brand: { status: 'known', value: 'Bravo' },
+            model: { status: 'known', value: 'B2' },
+            price: { status: 'known', value: 1200 }
+          }),
+          createOption('washer-a', {
+            brand: { status: 'known', value: 'Alpha' },
+            model: { status: 'known', value: 'A1' },
+            price: { status: 'known', value: 900 }
+          })
+        ]
+      }),
+      loadPresets: async () => ({ ok: true, presets: [], warnings: [], failure: null }),
+      savePreset: async () => ({ ok: true, preset: null, warnings: [], validationErrors: [], failure: null }),
+      deletePreset: async () => ({ ok: true, deletedPresetId: 'unused', warnings: [], failure: null })
+    })
+  })
+
+  await controller.boot()
+  controller.toggleOptionSelection('washer-b')
+  controller.toggleOptionSelection('washer-a')
+
+  await controller.updateFilters({ dimensionId: 'brand', patch: { mode: 'exact', value: 'Alpha' } })
+
+  assert.deepEqual(controller.getState().comparison.selectedOptionIds, ['washer-b', 'washer-a'])
+  assert.deepEqual(controller.getState().comparison.selectedOptions.map((option) => option.id), ['washer-a', 'washer-b'])
+})

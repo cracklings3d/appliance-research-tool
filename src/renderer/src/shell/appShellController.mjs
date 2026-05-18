@@ -3,7 +3,10 @@ import {
   createNavigationItems,
   validateElectronApi,
   resolveBootNavigation,
-  buildLoadSuccessView
+  buildLoadSuccessView,
+  clearListFilters,
+  deriveVisibleRows,
+  patchListFilters
 } from './listViewModel.mjs'
 
 export function createInitialState() {
@@ -14,7 +17,12 @@ export function createInitialState() {
       status: 'loading',
       message: 'Loading Washer…',
       columns: [],
-      rows: []
+      canonicalRows: [],
+      rows: [],
+      filters: [],
+      hasActiveFilters: false,
+      totalRowCount: 0,
+      filteredRowCount: 0
     }
   }
 }
@@ -96,9 +104,42 @@ export function createAppShellController({ apiProvider } = {}) {
     return state
   }
 
+  function updateFilters(update) {
+    if (!state.view || (state.view.status !== 'ready' && state.view.status !== 'empty')) {
+      return state
+    }
+
+    const filters = patchListFilters(state.view.columns, state.view.filters, update)
+    const visibleRowsResult = deriveVisibleRows(state.view.canonicalRows, filters)
+    const hasRows = state.view.canonicalRows.length > 0
+
+    setState({
+      ...state,
+      view: {
+        ...state.view,
+        status: hasRows ? 'ready' : 'empty',
+        message: deriveReadyMessage({
+          activeLabel: resolveActiveLabel(state.activeKey),
+          totalRowCount: state.view.canonicalRows.length,
+          visibleRowCount: visibleRowsResult.rows.length,
+          hasActiveFilters: visibleRowsResult.hasActiveFilters
+        }),
+        rows: visibleRowsResult.rows,
+        filters,
+        hasActiveFilters: visibleRowsResult.hasActiveFilters,
+        totalRowCount: state.view.canonicalRows.length,
+        filteredRowCount: visibleRowsResult.rows.length
+      }
+    })
+
+    return state
+  }
+
   async function loadAppliance(applianceKey) {
     const electronApi = provideApi()
     const apiValidation = validateElectronApi(electronApi, ['loadSchema', 'loadOptions'])
+    const isSameApplianceReload = applianceKey === state.activeKey
+    const previousFilters = isSameApplianceReload ? state.view.filters : []
 
     if (!apiValidation.ok) {
       setErrorState(applianceKey, apiValidation.category)
@@ -115,7 +156,12 @@ export function createAppShellController({ apiProvider } = {}) {
         status: 'loading',
         message: `Loading ${resolveActiveLabel(applianceKey)}…`,
         columns: [],
-        rows: []
+        canonicalRows: [],
+        rows: [],
+        filters: [],
+        hasActiveFilters: false,
+        totalRowCount: 0,
+        filteredRowCount: 0
       }
     })
 
@@ -170,16 +216,29 @@ export function createAppShellController({ apiProvider } = {}) {
       return state
     }
 
+    const filters = isSameApplianceReload
+      ? patchListFilters(viewResult.columns, previousFilters, {})
+      : clearListFilters(viewResult.columns)
+    const visibleRowsResult = deriveVisibleRows(viewResult.rows, filters)
+
     setState({
       ...state,
       activeKey: applianceKey,
       view: {
         status: viewResult.status,
-        message: viewResult.status === 'empty'
-          ? `No Options available for ${resolveActiveLabel(applianceKey)} yet.`
-          : '',
+        message: deriveReadyMessage({
+          activeLabel: resolveActiveLabel(applianceKey),
+          totalRowCount: viewResult.rows.length,
+          visibleRowCount: visibleRowsResult.rows.length,
+          hasActiveFilters: visibleRowsResult.hasActiveFilters
+        }),
         columns: viewResult.columns,
-        rows: viewResult.rows
+        canonicalRows: viewResult.rows,
+        rows: visibleRowsResult.rows,
+        filters,
+        hasActiveFilters: visibleRowsResult.hasActiveFilters,
+        totalRowCount: viewResult.rows.length,
+        filteredRowCount: visibleRowsResult.rows.length
       }
     })
 
@@ -196,7 +255,12 @@ export function createAppShellController({ apiProvider } = {}) {
         status: 'error',
         message: `${resolveLabelFromItems(createNavigationItems(nextLabels), applianceKey)} could not be loaded. ${category}.`,
         columns: [],
-        rows: []
+        canonicalRows: [],
+        rows: [],
+        filters: [],
+        hasActiveFilters: false,
+        totalRowCount: 0,
+        filteredRowCount: 0
       }
     })
   }
@@ -224,6 +288,7 @@ export function createAppShellController({ apiProvider } = {}) {
     boot,
     selectAppliance,
     retry,
+    updateFilters,
     dispose() {
       disposed = true
       loadRequestId += 1
@@ -235,4 +300,16 @@ export function createAppShellController({ apiProvider } = {}) {
 function resolveLabelFromItems(items, applianceKey) {
   const item = items.find((entry) => entry.key === applianceKey)
   return item ? item.label : FALLBACK_NAVIGATION_LABELS[applianceKey] || applianceKey
+}
+
+function deriveReadyMessage({ activeLabel, totalRowCount, visibleRowCount, hasActiveFilters }) {
+  if (totalRowCount === 0) {
+    return `No Options available for ${activeLabel} yet.`
+  }
+
+  if (hasActiveFilters && visibleRowCount === 0) {
+    return `No visible Options match the active Dimension filters for ${activeLabel}.`
+  }
+
+  return ''
 }

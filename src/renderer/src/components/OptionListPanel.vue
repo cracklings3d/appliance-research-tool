@@ -19,6 +19,94 @@
     </div>
 
     <div v-else class="table-wrap">
+      <div v-if="view.filters.length" class="filter-panel">
+        <div
+          v-for="filter in view.filters"
+          :key="filter.id"
+          class="filter-card"
+        >
+          <label class="filter-label" :for="`filter-${filter.id}`">{{ filter.label }}</label>
+
+          <template v-if="filter.type === 'string'">
+            <div class="filter-inline-group">
+              <select
+                :id="`filter-mode-${filter.id}`"
+                class="filter-select"
+                :value="filter.draft.mode"
+                @change="emitFilterPatch(filter.id, { mode: $event.target.value })"
+              >
+                <option value="exact">Exact</option>
+                <option value="substring">Contains</option>
+              </select>
+              <input
+                :id="`filter-${filter.id}`"
+                class="filter-input"
+                type="text"
+                :value="filter.draft.value"
+                @input="emitFilterPatch(filter.id, { value: $event.target.value })"
+              >
+            </div>
+          </template>
+
+          <template v-else-if="filter.type === 'enum'">
+            <div class="filter-checkbox-list">
+              <label
+                v-for="value in filter.allowedValues"
+                :key="value"
+                class="filter-checkbox"
+              >
+                <input
+                  type="checkbox"
+                  :checked="filter.draft.selectedValues.includes(value)"
+                  @change="toggleEnumValue(filter, value, $event.target.checked)"
+                >
+                <span>{{ value }}</span>
+              </label>
+            </div>
+          </template>
+
+          <template v-else-if="filter.type === 'boolean'">
+            <select
+              :id="`filter-${filter.id}`"
+              class="filter-select"
+              :value="resolveBooleanDraftValue(filter.draft.value)"
+              @change="emitFilterPatch(filter.id, { value: parseBooleanDraftValue($event.target.value) })"
+            >
+              <option value="">Any</option>
+              <option value="true">True</option>
+              <option value="false">False</option>
+            </select>
+          </template>
+
+          <template v-else>
+            <div class="filter-inline-group">
+              <input
+                :id="`filter-${filter.id}-min`"
+                class="filter-input"
+                type="text"
+                inputmode="decimal"
+                placeholder="Min"
+                :value="filter.draft.min"
+                @input="emitFilterPatch(filter.id, { min: $event.target.value })"
+              >
+              <input
+                :id="`filter-${filter.id}-max`"
+                class="filter-input"
+                type="text"
+                inputmode="decimal"
+                placeholder="Max"
+                :value="filter.draft.max"
+                @input="emitFilterPatch(filter.id, { max: $event.target.value })"
+              >
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <div v-if="view.hasActiveFilters && view.rows.length === 0" class="state-card state-card--compact">
+        <p>{{ view.message }}</p>
+      </div>
+
       <table class="option-table">
         <thead>
           <tr>
@@ -29,7 +117,11 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="row in view.rows" :key="row.key">
+          <tr
+            v-for="row in view.rows"
+            :key="row.key"
+            :class="{ 'option-table__row--warning': row.filterMatchKind === 'na-warning' }"
+          >
             <td>
               <label class="compare-toggle">
                 <input
@@ -39,6 +131,13 @@
                 >
                 <span>Compare</span>
               </label>
+
+              <p
+                v-if="row.filterMatchKind === 'na-warning'"
+                class="row-warning"
+              >
+                Warning: Active filters hit N/A for {{ row.filterWarningDimensionLabels.join(', ') }}.
+              </p>
             </td>
             <td v-for="cell in row.cells" :key="cell.columnId">
               <span
@@ -58,7 +157,7 @@
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
   activeLabel: {
     type: String,
     required: true
@@ -73,7 +172,43 @@ defineProps({
   }
 })
 
-defineEmits(['retry', 'toggle-option'])
+const emit = defineEmits(['retry', 'toggle-option', 'update-filter'])
+
+function emitFilterPatch(dimensionId, patch) {
+  emit('update-filter', { dimensionId, patch })
+}
+
+function toggleEnumValue(filter, value, isChecked) {
+  const selectedValues = isChecked
+    ? [...filter.draft.selectedValues, value]
+    : filter.draft.selectedValues.filter((candidate) => candidate !== value)
+
+  emitFilterPatch(filter.id, { selectedValues })
+}
+
+function resolveBooleanDraftValue(value) {
+  if (value === true) {
+    return 'true'
+  }
+
+  if (value === false) {
+    return 'false'
+  }
+
+  return ''
+}
+
+function parseBooleanDraftValue(value) {
+  if (value === 'true') {
+    return true
+  }
+
+  if (value === 'false') {
+    return false
+  }
+
+  return null
+}
 </script>
 
 <style scoped>
@@ -99,5 +234,66 @@ defineEmits(['retry', 'toggle-option'])
   align-items: center;
   gap: 0.45rem;
   font-weight: 600;
+}
+
+.table-wrap {
+  display: grid;
+  gap: 1rem;
+}
+
+.filter-panel {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+}
+
+.filter-card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.85rem;
+  border: 1px solid #d9e2ec;
+  border-radius: 12px;
+  background: #f8fbff;
+}
+
+.filter-label {
+  font-weight: 700;
+}
+
+.filter-inline-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.filter-input,
+.filter-select {
+  width: 100%;
+  border: 1px solid #bcccdc;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  background: #ffffff;
+}
+
+.filter-checkbox-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.filter-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.row-warning {
+  margin: 0.5rem 0 0;
+  color: #9a6700;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.option-table__row--warning {
+  background: #fff9db;
 }
 </style>

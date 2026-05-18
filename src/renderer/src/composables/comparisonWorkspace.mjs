@@ -118,6 +118,15 @@ export function createComparisonWorkspaceController({ apiProvider, shellControll
     return state
   }
 
+  async function updateFilters(update) {
+    if (typeof integratedShellController.updateFilters === 'function') {
+      await integratedShellController.updateFilters(update)
+      await comparisonSyncPromise
+    }
+
+    return state
+  }
+
   async function retryPresetLoad() {
     if (!workspaceData.schema || workspaceData.activeKey !== state.activeKey) {
       return state
@@ -384,7 +393,7 @@ export function createComparisonWorkspaceController({ apiProvider, shellControll
     }
 
     const resetComparison = applianceKey !== workspaceData.activeKey
-    const orderedOptions = deriveOrderedOptions(shellState?.view?.rows)
+    const orderedOptions = deriveOrderedOptions(shellState?.view?.canonicalRows ?? shellState?.view?.rows)
     const apiResult = getApi(['loadSchema'])
 
     if (!apiResult.ok) {
@@ -647,6 +656,7 @@ export function createComparisonWorkspaceController({ apiProvider, shellControll
     boot,
     selectAppliance,
     retry,
+    updateFilters,
     syncShellState: async (shellState) => {
       mirrorShellState(shellState)
       comparisonSyncPromise = syncComparisonFromShell(shellState)

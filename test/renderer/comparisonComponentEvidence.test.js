@@ -43,3 +43,12 @@ test('comparison panel exposes renderer preset save, apply, and delete interacti
   assert.match(source, /@click="\$emit\('apply-preset', preset\.id\)"/)
   assert.match(source, /@click="\$emit\('delete-preset', preset\.id\)"/)
 })
+
+test('read-only option list exposes schema-derived filters, row Warning copy, and N/A presentation hooks', () => {
+  const source = readRendererFile('src/renderer/src/components/OptionListPanel.vue')
+
+  assert.match(source, /v-for="filter in view\.filters"/)
+  assert.match(source, /Warning: Active filters hit N\/A for/)
+  assert.match(source, /cell\.kind === 'na'/)
+  assert.match(source, /data-evaluation-state="cell\.dataEvaluationState"|:data-evaluation-state="cell\.dataEvaluationState"/)
+})

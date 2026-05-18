@@ -7,6 +7,8 @@ export const FALLBACK_NAVIGATION_LABELS = {
 }
 
 export const NA_TOKEN_CLASS_NAME = 'evaluation-token evaluation-token--na'
+export const FILTER_MATCH_KIND_COMPLETE = 'complete-match'
+export const FILTER_MATCH_KIND_WARNING = 'na-warning'
 
 const VISIBLE_DIMENSION_TYPES = new Set(['boolean', 'enum', 'numeric', 'string'])
 
@@ -118,12 +120,18 @@ export function deriveVisibleColumns(applianceKey, schema) {
       return fail('Schema unavailable or invalid')
     }
 
+    const allowedValues = deriveAllowedValues(dimension)
+    if (dimension.type === 'enum' && !allowedValues) {
+      return fail('Schema unavailable or invalid')
+    }
+
     columns.push({
       id: dimension.id,
       label: dimension.label,
       type: dimension.type,
       required: dimension.required,
-      unit: typeof dimension.unit === 'string' ? dimension.unit : undefined
+      unit: typeof dimension.unit === 'string' ? dimension.unit : undefined,
+      allowedValues
     })
   }
 
@@ -316,6 +324,125 @@ export function buildLoadSuccessView(schema, options, applianceKey) {
   }
 }
 
+export function deriveListFilters(columns, existingFilters = []) {
+  const previousById = new Map(
+    (Array.isArray(existingFilters) ? existingFilters : [])
+      .filter((filter) => filter && typeof filter.id === 'string')
+      .map((filter) => [filter.id, filter])
+  )
+
+  return (Array.isArray(columns) ? columns : []).map((column) => createListFilter(column, previousById.get(column.id)?.draft))
+}
+
+export function patchListFilters(columns, existingFilters, update) {
+  if (!update || typeof update !== 'object' || typeof update.dimensionId !== 'string') {
+    return deriveListFilters(columns, existingFilters)
+  }
+
+  return deriveListFilters(columns, existingFilters).map((filter) => {
+    if (filter.id !== update.dimensionId) {
+      return filter
+    }
+
+    return createListFilter(resolveColumnById(columns, filter.id), {
+      ...filter.draft,
+      ...(update.patch && typeof update.patch === 'object' ? update.patch : {})
+    })
+  })
+}
+
+export function clearListFilters(columns) {
+  return deriveListFilters(columns)
+}
+
+export function classifyRowAgainstFilters(row, filters) {
+  const activeFilters = (Array.isArray(filters) ? filters : []).filter((filter) => filter?.isActive)
+
+  if (activeFilters.length === 0) {
+    return {
+      matchKind: FILTER_MATCH_KIND_COMPLETE,
+      filterWarningDimensionIds: [],
+      filterWarningDimensionLabels: []
+    }
+  }
+
+  const warningDimensionIds = []
+  const warningDimensionLabels = []
+
+  for (const filter of activeFilters) {
+    const matchKind = classifyEvaluationAgainstFilter(row?.option?.evaluations, filter)
+
+    if (matchKind === 'reject') {
+      return {
+        matchKind: 'reject',
+        filterWarningDimensionIds: [],
+        filterWarningDimensionLabels: []
+      }
+    }
+
+    if (matchKind === 'na-keep') {
+      warningDimensionIds.push(filter.id)
+      warningDimensionLabels.push(filter.label)
+    }
+  }
+
+  return {
+    matchKind: warningDimensionIds.length > 0 ? FILTER_MATCH_KIND_WARNING : FILTER_MATCH_KIND_COMPLETE,
+    filterWarningDimensionIds: warningDimensionIds,
+    filterWarningDimensionLabels: warningDimensionLabels
+  }
+}
+
+export function deriveVisibleRows(canonicalRows, filters) {
+  const normalizedRows = Array.isArray(canonicalRows) ? canonicalRows : []
+  const activeFilters = (Array.isArray(filters) ? filters : []).filter((filter) => filter?.isActive)
+
+  if (activeFilters.length === 0) {
+    return {
+      rows: normalizedRows,
+      hasActiveFilters: false
+    }
+  }
+
+  const completeMatches = []
+  const warningRows = []
+
+  for (const row of normalizedRows) {
+    const classification = classifyRowAgainstFilters(row, activeFilters)
+
+    if (classification.matchKind === 'reject') {
+      continue
+    }
+
+    const nextRow = {
+      ...row,
+      filterMatchKind: classification.matchKind,
+      filterWarningDimensionIds: classification.filterWarningDimensionIds,
+      filterWarningDimensionLabels: classification.filterWarningDimensionLabels
+    }
+
+    if (classification.matchKind === FILTER_MATCH_KIND_WARNING) {
+      warningRows.push(nextRow)
+      continue
+    }
+
+    completeMatches.push(nextRow)
+  }
+
+  return {
+    rows: [...completeMatches, ...warningRows],
+    hasActiveFilters: true
+  }
+}
+
+export function isListFilterActive(filter) {
+  if (!filter || typeof filter !== 'object' || typeof filter.type !== 'string') {
+    return false
+  }
+
+  return isFilterDraftActive(filter.type, filter.draft)
+}
+
 function isExcludedDimension(applianceKey, dimension) {
   if (dimension.type === 'pointer') {
     return true
@@ -329,6 +456,160 @@ function isExcludedDimension(applianceKey, dimension) {
     || dimension.id === 'dryer'
     || dimension.id.startsWith('washer.')
     || dimension.id.startsWith('dryer.')
+}
+
+function deriveAllowedValues(dimension) {
+  if (dimension.type !== 'enum') {
+    return undefined
+  }
+
+  if (!Array.isArray(dimension.allowedValues) || dimension.allowedValues.length === 0) {
+    return null
+  }
+
+  const seenValues = new Set()
+  const allowedValues = []
+
+  for (const value of dimension.allowedValues) {
+    if (typeof value !== 'string' || seenValues.has(value)) {
+      return null
+    }
+
+    seenValues.add(value)
+    allowedValues.push(value)
+  }
+
+  return allowedValues
+}
+
+function createListFilter(column, draft) {
+  return {
+    id: column.id,
+    label: column.label,
+    type: column.type,
+    required: column.required,
+    unit: column.unit,
+    allowedValues: Array.isArray(column.allowedValues) ? [...column.allowedValues] : undefined,
+    draft: normalizeFilterDraft(column, draft),
+    isActive: isFilterDraftActive(column.type, normalizeFilterDraft(column, draft))
+  }
+}
+
+function normalizeFilterDraft(column, draft) {
+  if (column.type === 'string') {
+    return {
+      mode: draft?.mode === 'substring' ? 'substring' : 'exact',
+      value: typeof draft?.value === 'string' ? draft.value : ''
+    }
+  }
+
+  if (column.type === 'enum') {
+    const allowedValues = new Set(Array.isArray(column.allowedValues) ? column.allowedValues : [])
+    const selectedValues = Array.isArray(draft?.selectedValues)
+      ? draft.selectedValues.filter((value, index, values) => typeof value === 'string' && allowedValues.has(value) && values.indexOf(value) === index)
+      : []
+
+    return { selectedValues }
+  }
+
+  if (column.type === 'boolean') {
+    return {
+      value: draft?.value === true || draft?.value === false ? draft.value : null
+    }
+  }
+
+  return {
+    min: typeof draft?.min === 'string' ? draft.min : '',
+    max: typeof draft?.max === 'string' ? draft.max : ''
+  }
+}
+
+function isFilterDraftActive(type, draft) {
+  if (type === 'string') {
+    return typeof draft?.value === 'string' && draft.value.trim() !== ''
+  }
+
+  if (type === 'enum') {
+    return Array.isArray(draft?.selectedValues) && draft.selectedValues.length > 0
+  }
+
+  if (type === 'boolean') {
+    return draft?.value === true || draft?.value === false
+  }
+
+  const min = parseNumericBound(draft?.min)
+  const max = parseNumericBound(draft?.max)
+  return min !== null || max !== null
+}
+
+function classifyEvaluationAgainstFilter(evaluations, filter) {
+  if (!evaluations || typeof evaluations !== 'object') {
+    return filter.required ? 'reject' : 'na-keep'
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(evaluations, filter.id)) {
+    return filter.required ? 'reject' : 'na-keep'
+  }
+
+  const evaluation = evaluations[filter.id]
+
+  if (!evaluation || typeof evaluation !== 'object') {
+    return 'reject'
+  }
+
+  if (evaluation.status === 'na') {
+    return 'na-keep'
+  }
+
+  if (evaluation.status !== 'known' || !isKnownValueValid(filter.type, evaluation.value)) {
+    return 'reject'
+  }
+
+  return matchesKnownValue(filter, evaluation.value) ? 'known-match' : 'reject'
+}
+
+function matchesKnownValue(filter, value) {
+  if (filter.type === 'string') {
+    if (filter.draft.mode === 'substring') {
+      return value.toLowerCase().includes(filter.draft.value.toLowerCase())
+    }
+
+    return value === filter.draft.value
+  }
+
+  if (filter.type === 'enum') {
+    return filter.draft.selectedValues.includes(value)
+  }
+
+  if (filter.type === 'boolean') {
+    return value === filter.draft.value
+  }
+
+  const min = parseNumericBound(filter.draft.min)
+  const max = parseNumericBound(filter.draft.max)
+
+  if (min !== null && value < min) {
+    return false
+  }
+
+  if (max !== null && value > max) {
+    return false
+  }
+
+  return true
+}
+
+function parseNumericBound(value) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return null
+  }
+
+  const parsedValue = Number(value)
+  return Number.isFinite(parsedValue) ? parsedValue : null
+}
+
+function resolveColumnById(columns, columnId) {
+  return (Array.isArray(columns) ? columns : []).find((column) => column?.id === columnId)
 }
 
 function createNaCell() {
