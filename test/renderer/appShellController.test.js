@@ -684,3 +684,104 @@ test('laundry-set supporting dependency failure routes the active view to error'
   assert.equal(controller.getState().view.status, 'error')
   assert.match(controller.getState().view.message, /Laundry Set could not be loaded\. Schema unavailable or invalid\./)
 })
+
+test('incomplete laundry-set rows stay visible with warning metadata and remain filterable when a referenced Option is missing', async () => {
+  const { createAppShellController } = await loadControllerModule()
+  const controller = createAppShellController({
+    apiProvider: () => ({
+      loadSchema: async (applianceKey) => {
+        if (applianceKey === 'laundry-set') {
+          return {
+            ok: true,
+            schema: {
+              dimensions: [
+                { id: 'brand', label: 'Brand', type: 'string', required: true },
+                { id: 'bundlePrice', label: 'Bundle Price', type: 'numeric', required: true },
+                { id: 'washer', label: 'Washer', type: 'pointer', required: true },
+                { id: 'dryer', label: 'Dryer', type: 'pointer', required: true },
+                { id: 'washer.capacityKg', label: 'Washer Capacity', type: 'numeric', required: false }
+              ],
+              defaultListOrder: [{ dimensionId: 'bundlePrice', direction: 'asc' }]
+            }
+          }
+        }
+
+        return {
+          ok: true,
+          schema: {
+            dimensions: applianceKey === 'washer'
+              ? [{ id: 'capacityKg', label: 'Capacity', type: 'numeric', required: true, unit: 'kg' }]
+              : [{ id: 'noiseLevelDb', label: 'Noise', type: 'numeric', required: false, unit: 'dB' }]
+          }
+        }
+      },
+      loadOptions: async (applianceKey) => {
+        if (applianceKey === 'laundry-set') {
+          return {
+            ok: true,
+            options: [
+              {
+                id: 'set-complete',
+                evaluations: {
+                  brand: { status: 'known', value: 'BundleCo' },
+                  bundlePrice: { status: 'known', value: 2000 },
+                  washer: { status: 'known', value: 'washer-1' },
+                  dryer: { status: 'known', value: 'dryer-1' }
+                }
+              },
+              {
+                id: 'set-incomplete',
+                evaluations: {
+                  brand: { status: 'known', value: 'BrokenCo' },
+                  bundlePrice: { status: 'known', value: 2100 },
+                  washer: { status: 'known', value: 'washer-missing' },
+                  dryer: { status: 'known', value: 'dryer-1' }
+                }
+              }
+            ]
+          }
+        }
+
+        if (applianceKey === 'washer') {
+          return {
+            ok: true,
+            options: [
+              {
+                id: 'washer-1',
+                evaluations: { capacityKg: { status: 'known', value: 10 } }
+              }
+            ]
+          }
+        }
+
+        return {
+          ok: true,
+          options: [
+            {
+              id: 'dryer-1',
+              evaluations: { noiseLevelDb: { status: 'known', value: 61 } }
+            }
+          ]
+        }
+      }
+    })
+  })
+
+  await controller.selectAppliance('laundry-set')
+
+  assert.equal(controller.getState().view.status, 'ready')
+  assert.deepEqual(controller.getState().view.rows.map((row) => row.key), ['set-complete', 'set-incomplete'])
+  assert.equal(controller.getState().view.rows[1].isIncomplete, true)
+  assert.deepEqual(controller.getState().view.rows[1].warning, {
+    text: 'Warning',
+    title: 'Warning: Missing delegated reference for washer.',
+    missingReferences: ['washer']
+  })
+
+  await controller.updateFilters({ dimensionId: 'brand', patch: { mode: 'exact', value: 'BrokenCo' } })
+
+  assert.equal(controller.getState().view.status, 'ready')
+  assert.deepEqual(controller.getState().view.rows.map((row) => row.key), ['set-incomplete'])
+  assert.equal(controller.getState().view.rows[0].isIncomplete, true)
+  assert.equal(controller.getState().view.rows[0].warning.title, 'Warning: Missing delegated reference for washer.')
+})

@@ -400,6 +400,7 @@ test('buildLoadSuccessView resolves delegated laundry-set values and keeps incom
   assert.equal(result.rows[0].cells[1].text, '10 kg')
   assert.equal(result.rows[1].isIncomplete, true)
   assert.equal(result.rows[1].warning.text, 'Warning')
+  assert.equal(result.rows[1].warning.title, 'Warning: Missing delegated reference for washer.')
   assert.equal(result.rows[1].cells[1].text, 'N/A')
 })
 
@@ -646,4 +647,162 @@ test('missing optional relevant Evaluation is treated as N/A keep while malforme
 
   const malformedResult = classifyRowAgainstFilters({ option: { evaluations: { warranty: { status: 'known', value: '12' } } } }, filters)
   assert.equal(malformedResult.matchKind, 'reject')
+})
+
+test('active Dimension filters combine with logical AND while enum values use logical OR', async () => {
+  const { deriveListFilters, patchListFilters, deriveVisibleRows } = await loadListViewModel()
+  const columns = [
+    { id: 'brand', label: 'Brand', type: 'string', required: true },
+    { id: 'finish', label: 'Finish', type: 'enum', required: false, allowedValues: ['White', 'Graphite', 'Blue'] },
+    { id: 'isCompact', label: 'Compact', type: 'boolean', required: false },
+    { id: 'price', label: 'Price', type: 'numeric', required: false }
+  ]
+
+  let filters = deriveListFilters(columns)
+  filters = patchListFilters(columns, filters, { dimensionId: 'brand', patch: { mode: 'exact', value: 'Alpha' } })
+  filters = patchListFilters(columns, filters, { dimensionId: 'finish', patch: { selectedValues: ['White', 'Graphite'] } })
+  filters = patchListFilters(columns, filters, { dimensionId: 'isCompact', patch: { value: false } })
+  filters = patchListFilters(columns, filters, { dimensionId: 'price', patch: { min: '1000', max: '1200' } })
+
+  const visible = deriveVisibleRows([
+    {
+      key: 'match-white',
+      option: {
+        evaluations: {
+          brand: { status: 'known', value: 'Alpha' },
+          finish: { status: 'known', value: 'White' },
+          isCompact: { status: 'known', value: false },
+          price: { status: 'known', value: 1000 }
+        }
+      },
+      cells: []
+    },
+    {
+      key: 'match-graphite',
+      option: {
+        evaluations: {
+          brand: { status: 'known', value: 'Alpha' },
+          finish: { status: 'known', value: 'Graphite' },
+          isCompact: { status: 'known', value: false },
+          price: { status: 'known', value: 1200 }
+        }
+      },
+      cells: []
+    },
+    {
+      key: 'wrong-brand-case',
+      option: {
+        evaluations: {
+          brand: { status: 'known', value: 'alpha' },
+          finish: { status: 'known', value: 'White' },
+          isCompact: { status: 'known', value: false },
+          price: { status: 'known', value: 1100 }
+        }
+      },
+      cells: []
+    },
+    {
+      key: 'wrong-enum',
+      option: {
+        evaluations: {
+          brand: { status: 'known', value: 'Alpha' },
+          finish: { status: 'known', value: 'Blue' },
+          isCompact: { status: 'known', value: false },
+          price: { status: 'known', value: 1100 }
+        }
+      },
+      cells: []
+    },
+    {
+      key: 'wrong-boolean',
+      option: {
+        evaluations: {
+          brand: { status: 'known', value: 'Alpha' },
+          finish: { status: 'known', value: 'White' },
+          isCompact: { status: 'known', value: true },
+          price: { status: 'known', value: 1100 }
+        }
+      },
+      cells: []
+    },
+    {
+      key: 'below-min',
+      option: {
+        evaluations: {
+          brand: { status: 'known', value: 'Alpha' },
+          finish: { status: 'known', value: 'White' },
+          isCompact: { status: 'known', value: false },
+          price: { status: 'known', value: 999 }
+        }
+      },
+      cells: []
+    },
+    {
+      key: 'above-max',
+      option: {
+        evaluations: {
+          brand: { status: 'known', value: 'Alpha' },
+          finish: { status: 'known', value: 'Graphite' },
+          isCompact: { status: 'known', value: false },
+          price: { status: 'known', value: 1201 }
+        }
+      },
+      cells: []
+    }
+  ], filters)
+
+  assert.deepEqual(visible.rows.map((row) => row.key), ['match-white', 'match-graphite'])
+})
+
+test('string substring matching is case-insensitive and numeric bounds are inclusive for min-only max-only and range filters', async () => {
+  const { deriveListFilters, patchListFilters, classifyRowAgainstFilters } = await loadListViewModel()
+  const columns = [
+    { id: 'brand', label: 'Brand', type: 'string', required: true },
+    { id: 'price', label: 'Price', type: 'numeric', required: false }
+  ]
+  const row = {
+    option: {
+      evaluations: {
+        brand: { status: 'known', value: 'Alpha Deluxe' },
+        price: { status: 'known', value: 1000 }
+      }
+    }
+  }
+
+  let substringFilters = deriveListFilters(columns)
+  substringFilters = patchListFilters(columns, substringFilters, { dimensionId: 'brand', patch: { mode: 'substring', value: 'dElUxE' } })
+  assert.equal(classifyRowAgainstFilters(row, substringFilters).matchKind, 'complete-match')
+
+  let minOnlyFilters = deriveListFilters(columns)
+  minOnlyFilters = patchListFilters(columns, minOnlyFilters, { dimensionId: 'price', patch: { min: '1000', max: '' } })
+  assert.equal(classifyRowAgainstFilters(row, minOnlyFilters).matchKind, 'complete-match')
+
+  let maxOnlyFilters = deriveListFilters(columns)
+  maxOnlyFilters = patchListFilters(columns, maxOnlyFilters, { dimensionId: 'price', patch: { min: '', max: '1000' } })
+  assert.equal(classifyRowAgainstFilters(row, maxOnlyFilters).matchKind, 'complete-match')
+
+  let rangeFilters = deriveListFilters(columns)
+  rangeFilters = patchListFilters(columns, rangeFilters, { dimensionId: 'price', patch: { min: '1000', max: '1000' } })
+  assert.equal(classifyRowAgainstFilters(row, rangeFilters).matchKind, 'complete-match')
+})
+
+test('deriveVisibleRows keeps complete matches before na-warning rows with stable ordering inside each block', async () => {
+  const { deriveListFilters, patchListFilters, deriveVisibleRows } = await loadListViewModel()
+  const columns = [
+    { id: 'energy', label: 'Energy', type: 'enum', required: false, allowedValues: ['A'] }
+  ]
+
+  let filters = deriveListFilters(columns)
+  filters = patchListFilters(columns, filters, { dimensionId: 'energy', patch: { selectedValues: ['A'] } })
+
+  const visible = deriveVisibleRows([
+    { key: 'warning-1', option: { evaluations: { energy: { status: 'na' } } }, cells: [] },
+    { key: 'complete-1', option: { evaluations: { energy: { status: 'known', value: 'A' } } }, cells: [] },
+    { key: 'warning-2', option: { evaluations: {} }, cells: [] },
+    { key: 'complete-2', option: { evaluations: { energy: { status: 'known', value: 'A' } } }, cells: [] }
+  ], filters)
+
+  assert.deepEqual(visible.rows.map((row) => row.key), ['complete-1', 'complete-2', 'warning-1', 'warning-2'])
+  assert.deepEqual(visible.rows.slice(0, 2).map((row) => row.filterMatchKind), ['complete-match', 'complete-match'])
+  assert.deepEqual(visible.rows.slice(2).map((row) => row.filterMatchKind), ['na-warning', 'na-warning'])
 })

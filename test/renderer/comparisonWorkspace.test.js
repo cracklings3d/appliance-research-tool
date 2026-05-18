@@ -787,3 +787,90 @@ test('comparison controller keeps selected incomplete laundry-set entries after 
   assert.equal(controller.getState().comparison.selectedOptions[0].isIncomplete, true)
   assert.equal(controller.getState().comparison.selectedOptions[0].warning.text, 'Warning')
 })
+
+test('comparison keeps an already-selected incomplete laundry-set entry visible during filtered browsing flows', async () => {
+  const { createComparisonWorkspaceController } = await loadComparisonWorkspaceModule()
+  const controller = createComparisonWorkspaceController({
+    apiProvider: () => ({
+      listSchemas: async () => ({ schemas: [{ applianceKey: 'laundry-set', displayName: 'Laundry Set' }] }),
+      loadSchema: async (applianceKey) => {
+        if (applianceKey === 'laundry-set') {
+          return {
+            ok: true,
+            schema: {
+              appliance: 'laundry-set',
+              defaultComparisonDimensionIds: ['brand', 'bundlePrice'],
+              dimensions: [
+                { id: 'brand', label: 'Brand', type: 'string', required: true },
+                { id: 'bundlePrice', label: 'Bundle Price', type: 'numeric', unit: 'CNY', required: true },
+                { id: 'washer', label: 'Washer', type: 'pointer', required: true },
+                { id: 'dryer', label: 'Dryer', type: 'pointer', required: true },
+                { id: 'washer.capacityKg', label: 'Washer Capacity', type: 'numeric', required: false }
+              ],
+              defaultListOrder: [{ dimensionId: 'bundlePrice', direction: 'asc' }]
+            }
+          }
+        }
+
+        return {
+          ok: true,
+          schema: {
+            dimensions: applianceKey === 'washer'
+              ? [{ id: 'capacityKg', label: 'Capacity', type: 'numeric', required: true, unit: 'kg' }]
+              : [{ id: 'noiseLevelDb', label: 'Noise', type: 'numeric', required: false, unit: 'dB' }]
+          }
+        }
+      },
+      loadOptions: async (applianceKey) => {
+        if (applianceKey === 'laundry-set') {
+          return {
+            ok: true,
+            options: [
+              createOption('set-visible', {
+                brand: { status: 'known', value: 'VisibleCo' },
+                bundlePrice: { status: 'known', value: 1800 },
+                washer: { status: 'known', value: 'washer-1' },
+                dryer: { status: 'known', value: 'dryer-1' }
+              }),
+              createOption('set-incomplete', {
+                brand: { status: 'known', value: 'BrokenCo' },
+                bundlePrice: { status: 'known', value: 1900 },
+                washer: { status: 'known', value: 'washer-missing' },
+                dryer: { status: 'known', value: 'dryer-1' }
+              })
+            ]
+          }
+        }
+
+        if (applianceKey === 'washer') {
+          return {
+            ok: true,
+            options: [createOption('washer-1', { capacityKg: { status: 'known', value: 10 } })]
+          }
+        }
+
+        return {
+          ok: true,
+          options: [createOption('dryer-1', { noiseLevelDb: { status: 'known', value: 61 } })]
+        }
+      },
+      loadPresets: async () => ({ ok: true, presets: [], warnings: [], failure: null }),
+      savePreset: async () => ({ ok: true, preset: null, warnings: [], validationErrors: [], failure: null }),
+      deletePreset: async () => ({ ok: true, deletedPresetId: 'unused', warnings: [], failure: null })
+    })
+  })
+
+  await controller.boot()
+  controller.toggleOptionSelection('set-incomplete')
+  await controller.updateFilters({ dimensionId: 'brand', patch: { mode: 'exact', value: 'VisibleCo' } })
+
+  assert.deepEqual(controller.getState().view.rows.map((row) => row.key), ['set-visible'])
+  assert.deepEqual(controller.getState().comparison.selectedOptionIds, ['set-incomplete'])
+  assert.deepEqual(controller.getState().comparison.selectedOptions.map((option) => option.id), ['set-incomplete'])
+  assert.equal(controller.getState().comparison.selectedOptions[0].isIncomplete, true)
+  assert.deepEqual(controller.getState().comparison.selectedOptions[0].warning, {
+    text: 'Warning',
+    title: 'Warning: Missing delegated reference for washer.',
+    missingReferences: ['washer']
+  })
+})
