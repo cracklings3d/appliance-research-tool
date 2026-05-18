@@ -26,7 +26,10 @@
       <div v-if="warnings.length" class="inline-warning-list">
         <p class="panel-eyebrow">Warnings</p>
         <ul>
-          <li v-for="warning in warnings" :key="`${warning.applianceKey ?? activeApplianceKey}-${warning.code}`">
+          <li
+            v-for="(warning, index) in warnings"
+            :key="`${warning.applianceKey ?? activeApplianceKey}-${warning.code}-${warning.optionId ?? 'no-option'}-${warning.dimensionId ?? 'no-dimension'}-${index}`"
+          >
             {{ formatEntry(warning) }}
           </li>
         </ul>
