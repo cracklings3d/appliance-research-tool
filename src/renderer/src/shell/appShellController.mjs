@@ -336,26 +336,41 @@ async function loadSupportingData({ electronApi, applianceKey, isStale }) {
       return { ok: false, stale: true }
     }
 
-    const failure = [washerSchemaResult, washerOptionsResult, dryerSchemaResult, dryerOptionsResult].find((result) => !result.ok)
-    if (failure) {
-      return failure
-    }
-
     return {
       ok: true,
       supportingData: {
         washer: {
-          schema: washerSchemaResult.schema,
-          options: washerOptionsResult.options
+          schemaAvailable: washerSchemaResult.ok,
+          schema: washerSchemaResult.ok ? washerSchemaResult.schema : null,
+          optionsAvailable: washerOptionsResult.ok,
+          options: washerOptionsResult.ok ? washerOptionsResult.options : []
         },
         dryer: {
-          schema: dryerSchemaResult.schema,
-          options: dryerOptionsResult.options
+          schemaAvailable: dryerSchemaResult.ok,
+          schema: dryerSchemaResult.ok ? dryerSchemaResult.schema : null,
+          optionsAvailable: dryerOptionsResult.ok,
+          options: dryerOptionsResult.ok ? dryerOptionsResult.options : []
         }
       }
     }
   } catch (_error) {
-    return fail('Schema unavailable or invalid')
+    return {
+      ok: true,
+      supportingData: {
+        washer: {
+          schemaAvailable: false,
+          schema: null,
+          optionsAvailable: false,
+          options: []
+        },
+        dryer: {
+          schemaAvailable: false,
+          schema: null,
+          optionsAvailable: false,
+          options: []
+        }
+      }
+    }
   }
 }
 
