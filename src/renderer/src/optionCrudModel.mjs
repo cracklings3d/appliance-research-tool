@@ -201,7 +201,7 @@ function buildDeleteConfirmationMessage({ applianceKey, optionLabel, affectedLau
     return `Delete ${label}? This removes only the selected ${applianceLabel} Option.`
   }
 
-  return `Delete ${label}? ${affectedCount} Laundry Set Option${affectedCount === 1 ? '' : 's'} still reference this ${applianceLabel.toLowerCase()}. Their ${applianceLabel.toLowerCase()} pointer will be cleared and those Laundry Set Options will become incomplete.`
+  return `Delete ${label}? ${affectedCount} Laundry Set Option${affectedCount === 1 ? '' : 's'} still ${affectedCount === 1 ? 'references' : 'reference'} this ${applianceLabel.toLowerCase()}. Their ${applianceLabel.toLowerCase()} pointer will be cleared and those Laundry Set Options will become incomplete.`
 }
 
 function getOptionDisplayLabel(option) {
