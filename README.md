@@ -88,6 +88,10 @@ Communication between main and renderer is done via IPC (Inter-Process Communica
 
 MVP schema and option contracts for `washer`, `dryer`, and `laundry-set` are defined in [`schemas/`](./schemas/README.md).
 
+### Local data ownership
+
+User guidance for local schema, **Option**, and comparison-preset ownership in the active app profile is documented in [`docs/local-data-ownership.md`](./docs/local-data-ownership.md).
+
 ## Scripts
 
 | Script | Description |
