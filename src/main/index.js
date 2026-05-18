@@ -4,6 +4,7 @@ const path = require('path')
 const { createOptionStorage } = require('./optionStorage')
 const { createPresetStorage } = require('./presetStorage')
 const { createSchemaStorage } = require('./schemaStorage')
+const fs = require('fs')
 
 process.env.DIST_ELECTRON = path.join(__dirname, '../..')
 process.env.DIST = path.join(process.env.DIST_ELECTRON, 'dist')
@@ -12,6 +13,12 @@ process.env.VITE_PUBLIC = process.env.VITE_DEV_SERVER_URL
   : path.join(process.env.DIST, 'renderer')
 
 let mainWindow
+
+function resolveWindowIconPath() {
+  const candidatePath = path.join(process.env.VITE_PUBLIC, 'icon.png')
+
+  return fs.existsSync(candidatePath) ? candidatePath : undefined
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -24,7 +31,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true
     },
-    icon: path.join(process.env.VITE_PUBLIC, 'icon.png')
+    icon: resolveWindowIconPath()
   })
 
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -94,6 +101,7 @@ app.on('activate', () => {
 
 module.exports = {
   createWindow,
+  resolveWindowIconPath,
   registerIpcHandlers,
   startApplication
 }
