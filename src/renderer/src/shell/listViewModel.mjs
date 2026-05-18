@@ -12,6 +12,13 @@ export const FILTER_MATCH_KIND_WARNING = 'na-warning'
 
 const VISIBLE_DIMENSION_TYPES = new Set(['boolean', 'enum', 'numeric', 'string'])
 
+import {
+  createLaundrySetResolutionContext,
+  deriveLaundrySetRow,
+  parseDelegatedDimensionId,
+  resolveLaundrySetColumn
+} from './laundrySetResolutionModel.mjs'
+
 export function createNavigationItems(labels = FALLBACK_NAVIGATION_LABELS) {
   return CANONICAL_APPLIANCE_KEYS.map((key) => ({
     key,
@@ -85,7 +92,7 @@ export function resolveBootNavigation(discoveryEnvelope) {
   }
 }
 
-export function deriveVisibleColumns(applianceKey, schema) {
+export function deriveVisibleColumns(applianceKey, schema, { resolutionContext } = {}) {
   if (!schema || typeof schema !== 'object' || !Array.isArray(schema.dimensions)) {
     return fail('Schema unavailable or invalid')
   }
@@ -125,14 +132,21 @@ export function deriveVisibleColumns(applianceKey, schema) {
       return fail('Schema unavailable or invalid')
     }
 
-    columns.push({
-      id: dimension.id,
-      label: dimension.label,
-      type: dimension.type,
-      required: dimension.required,
-      unit: typeof dimension.unit === 'string' ? dimension.unit : undefined,
-      allowedValues
-    })
+    if (applianceKey === 'laundry-set' && parseDelegatedDimensionId(dimension.id)) {
+      if (!resolutionContext) {
+        return fail('Schema unavailable or invalid')
+      }
+
+      const delegatedColumnResult = resolveLaundrySetColumn(dimension, resolutionContext)
+      if (!delegatedColumnResult.ok) {
+        return delegatedColumnResult
+      }
+
+      columns.push(delegatedColumnResult.column)
+      continue
+    }
+
+    columns.push(createVisibleColumn(dimension, allowedValues))
   }
 
   return {
@@ -222,7 +236,7 @@ export function deriveCellToken(column, evaluations) {
   }
 }
 
-export function deriveOrderedRows(options, columns, defaultListOrder) {
+export function deriveOrderedRows(options, columns, defaultListOrder, { applianceKey, resolutionContext } = {}) {
   if (!Array.isArray(options)) {
     return fail('Option data unavailable or invalid')
   }
@@ -232,35 +246,18 @@ export function deriveOrderedRows(options, columns, defaultListOrder) {
   for (let index = 0; index < options.length; index += 1) {
     const option = options[index]
 
-    if (!option || typeof option !== 'object' || !option.evaluations || typeof option.evaluations !== 'object') {
-      return fail('Malformed Option rows')
-    }
+    const rowResult = applianceKey === 'laundry-set' && resolutionContext
+      ? deriveLaundrySetRow(option, columns, resolutionContext)
+      : deriveStandardRow(option, columns)
 
-    const cells = columns.map((column) => {
-      const result = deriveCellToken(column, option.evaluations)
-      if (!result.ok) {
-        return result
-      }
-
-      return {
-        ok: true,
-        value: {
-          columnId: column.id,
-          ...result.cell
-        }
-      }
-    })
-
-    const failure = cells.find((cellResult) => !cellResult.ok)
-    if (failure) {
-      return failure
+    if (!rowResult.ok) {
+      return rowResult
     }
 
     rows.push({
-      key: typeof option.id === 'string' && option.id.length > 0 ? option.id : `row-${index}`,
-      option,
-      sourceIndex: index,
-      cells: cells.map((cellResult) => cellResult.value)
+      ...rowResult.row,
+      key: rowResult.row.key || `row-${index}`,
+      sourceIndex: index
     })
   }
 
@@ -300,8 +297,18 @@ export function deriveOrderedRows(options, columns, defaultListOrder) {
   }
 }
 
-export function buildLoadSuccessView(schema, options, applianceKey) {
-  const columnsResult = deriveVisibleColumns(applianceKey, schema)
+export function buildLoadSuccessView(schema, options, applianceKey, supportingData = null) {
+  const resolutionContextResult = applianceKey === 'laundry-set'
+    ? createLaundrySetResolutionContext(supportingData)
+    : { ok: true, targets: null }
+
+  if (!resolutionContextResult.ok) {
+    return resolutionContextResult
+  }
+
+  const columnsResult = deriveVisibleColumns(applianceKey, schema, {
+    resolutionContext: resolutionContextResult.ok ? resolutionContextResult : null
+  })
   if (!columnsResult.ok) {
     return columnsResult
   }
@@ -311,7 +318,10 @@ export function buildLoadSuccessView(schema, options, applianceKey) {
     return orderResult
   }
 
-  const rowsResult = deriveOrderedRows(options, columnsResult.columns, orderResult.rules)
+  const rowsResult = deriveOrderedRows(options, columnsResult.columns, orderResult.rules, {
+    applianceKey,
+    resolutionContext: resolutionContextResult.ok ? resolutionContextResult : null
+  })
   if (!rowsResult.ok) {
     return rowsResult
   }
@@ -452,10 +462,56 @@ function isExcludedDimension(applianceKey, dimension) {
     return false
   }
 
-  return dimension.id === 'washer'
-    || dimension.id === 'dryer'
-    || dimension.id.startsWith('washer.')
-    || dimension.id.startsWith('dryer.')
+  return dimension.id === 'washer' || dimension.id === 'dryer'
+}
+
+function createVisibleColumn(dimension, allowedValues) {
+  return {
+    id: dimension.id,
+    label: dimension.label,
+    type: dimension.type,
+    required: dimension.required,
+    unit: typeof dimension.unit === 'string' ? dimension.unit : undefined,
+    allowedValues,
+    delegated: null
+  }
+}
+
+function deriveStandardRow(option, columns) {
+  if (!option || typeof option !== 'object' || !option.evaluations || typeof option.evaluations !== 'object') {
+    return fail('Malformed Option rows')
+  }
+
+  const cells = columns.map((column) => {
+    const result = deriveCellToken(column, option.evaluations)
+    if (!result.ok) {
+      return result
+    }
+
+    return {
+      ok: true,
+      value: {
+        columnId: column.id,
+        ...result.cell
+      }
+    }
+  })
+
+  const failure = cells.find((cellResult) => !cellResult.ok)
+  if (failure) {
+    return failure
+  }
+
+  return {
+    ok: true,
+    row: {
+      key: typeof option.id === 'string' && option.id.length > 0 ? option.id : null,
+      option,
+      cells: cells.map((cellResult) => cellResult.value),
+      isIncomplete: false,
+      warning: null
+    }
+  }
 }
 
 function deriveAllowedValues(dimension) {

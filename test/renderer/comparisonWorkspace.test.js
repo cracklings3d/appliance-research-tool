@@ -534,7 +534,23 @@ test('save and delete preset mutations keep or reconcile local state based on re
 test('laundry-set comparison excludes delegated dotted dimensions from defaults addable choices and preset application', async () => {
   const { createComparisonWorkspaceController } = await loadComparisonWorkspaceModule()
   const api = createApiStub({
-    schemas: { 'laundry-set': createSchema('laundry-set') },
+    schemas: {
+      'laundry-set': createSchema('laundry-set'),
+      washer: createSchema('washer', {
+        dimensions: [
+          { id: 'brand', label: 'Brand', type: 'string', required: true },
+          { id: 'model', label: 'Model', type: 'string', required: true },
+          { id: 'capacityKg', label: 'Capacity', type: 'numeric', required: true, unit: 'kg' }
+        ]
+      }),
+      dryer: createSchema('dryer', {
+        dimensions: [
+          { id: 'brand', label: 'Brand', type: 'string', required: true },
+          { id: 'model', label: 'Model', type: 'string', required: true },
+          { id: 'noiseLevelDb', label: 'Noise', type: 'numeric', required: false, unit: 'dB' }
+        ]
+      })
+    },
     optionsByAppliance: {
       'laundry-set': [
         createOption('set-1', {
@@ -542,6 +558,20 @@ test('laundry-set comparison excludes delegated dotted dimensions from defaults 
           bundlePrice: { status: 'known', value: 2000 },
           washer: { status: 'known', value: 'washer-1' },
           dryer: { status: 'known', value: 'dryer-1' }
+        })
+      ],
+      washer: [
+        createOption('washer-1', {
+          brand: { status: 'known', value: 'WashCo' },
+          model: { status: 'known', value: 'W1' },
+          capacityKg: { status: 'known', value: 10 }
+        })
+      ],
+      dryer: [
+        createOption('dryer-1', {
+          brand: { status: 'known', value: 'DryCo' },
+          model: { status: 'known', value: 'D1' },
+          noiseLevelDb: { status: 'known', value: 61 }
         })
       ]
     },
@@ -655,4 +685,105 @@ test('filters do not clear selected comparison Option ids and comparison orderin
 
   assert.deepEqual(controller.getState().comparison.selectedOptionIds, ['washer-b', 'washer-a'])
   assert.deepEqual(controller.getState().comparison.selectedOptions.map((option) => option.id), ['washer-a', 'washer-b'])
+})
+
+test('buildComparisonMatrix preserves incomplete selected laundry-set metadata for rendering', async () => {
+  const { buildComparisonMatrix } = await loadComparisonWorkspaceModule()
+
+  const matrix = buildComparisonMatrix({
+    availableDimensions: [
+      { id: 'brand', label: 'Brand', type: 'string', required: true }
+    ],
+    comparedDimensionKeys: ['brand'],
+    orderedOptions: [
+      {
+        id: 'set-1',
+        option: createOption('set-1', {
+          brand: { status: 'known', value: 'BundleCo' }
+        }),
+        isIncomplete: true,
+        warning: {
+          text: 'Warning',
+          title: 'Warning: Missing delegated reference for washer.'
+        }
+      }
+    ],
+    selectedOptionIds: ['set-1']
+  })
+
+  assert.equal(matrix.selectedOptions[0].isIncomplete, true)
+  assert.equal(matrix.selectedOptions[0].warning.text, 'Warning')
+  assert.equal(matrix.rows[0].cells[0].text, 'BundleCo')
+})
+
+test('comparison controller keeps selected incomplete laundry-set entries after reload', async () => {
+  const { createComparisonWorkspaceController } = await loadComparisonWorkspaceModule()
+  const shellController = createShellControllerStub({
+    initialState: {
+      navigationItems: [{ key: 'laundry-set', label: 'Laundry Set' }],
+      activeKey: 'laundry-set',
+      view: {
+        status: 'loading',
+        message: 'Loading Laundry Set…',
+        columns: [],
+        rows: []
+      }
+    },
+    bootStateByKey: {
+      'laundry-set': {
+        navigationItems: [{ key: 'laundry-set', label: 'Laundry Set' }],
+        activeKey: 'laundry-set',
+        view: {
+          status: 'ready',
+          message: '',
+          columns: [{ id: 'brand', label: 'Brand' }],
+          rows: [
+            {
+              key: 'set-1',
+              option: createOption('set-1', {
+                brand: { status: 'known', value: 'BundleCo' },
+                washer: { status: 'na' },
+                dryer: { status: 'known', value: 'dryer-1' }
+              }),
+              cells: [],
+              isIncomplete: true,
+              warning: {
+                text: 'Warning',
+                title: 'Warning: Missing delegated reference for washer.'
+              }
+            }
+          ]
+        }
+      }
+    }
+  })
+
+  const controller = createComparisonWorkspaceController({
+    apiProvider: () => ({
+      loadSchema: async () => ({
+        ok: true,
+        schema: {
+          appliance: 'laundry-set',
+          defaultComparisonDimensionIds: ['brand'],
+          dimensions: [
+            { id: 'brand', label: 'Brand', type: 'string', required: true },
+            { id: 'washer', label: 'Washer', type: 'pointer', required: true },
+            { id: 'dryer', label: 'Dryer', type: 'pointer', required: true }
+          ]
+        }
+      }),
+      loadPresets: async () => ({ ok: true, presets: [], warnings: [], failure: null }),
+      savePreset: async () => ({ ok: true, preset: null, warnings: [], validationErrors: [], failure: null }),
+      deletePreset: async () => ({ ok: true, deletedPresetId: 'unused', warnings: [], failure: null })
+    }),
+    shellController
+  })
+
+  await controller.boot()
+  controller.toggleOptionSelection('set-1')
+  await controller.retry()
+
+  assert.deepEqual(controller.getState().comparison.selectedOptionIds, ['set-1'])
+  assert.equal(controller.getState().comparison.selectedOptions[0].isIncomplete, true)
+  assert.equal(controller.getState().comparison.selectedOptions[0].warning.text, 'Warning')
 })

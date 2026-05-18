@@ -120,7 +120,11 @@
           <tr
             v-for="row in view.rows"
             :key="row.key"
-            :class="{ 'option-table__row--warning': row.filterMatchKind === 'na-warning' }"
+            :class="{
+              'option-table__row--warning': row.filterMatchKind === 'na-warning',
+              'option-row--incomplete': row.isIncomplete
+            }"
+            :data-incomplete-row="row.isIncomplete ? 'true' : null"
           >
             <td>
               <label class="compare-toggle">
@@ -131,6 +135,13 @@
                 >
                 <span>Compare</span>
               </label>
+              <span
+                v-if="row.warning"
+                class="row-warning-badge"
+                :title="row.warning.title"
+              >
+                Warning
+              </span>
 
               <p
                 v-if="row.filterMatchKind === 'na-warning'"
@@ -295,5 +306,21 @@ function parseBooleanDraftValue(value) {
 
 .option-table__row--warning {
   background: #fff9db;
+}
+
+.option-row--incomplete {
+  opacity: 0.55;
+}
+
+.row-warning-badge {
+  display: inline-flex;
+  margin-top: 0.4rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: #fff7d6;
+  border: 1px solid #e0c463;
+  color: #7a4b00;
+  font-size: 0.85rem;
+  font-weight: 700;
 }
 </style>

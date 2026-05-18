@@ -125,15 +125,32 @@
           <thead>
             <tr>
               <th scope="col">Dimension</th>
-              <th v-for="option in comparison.selectedOptions" :key="option.id" scope="col">
-                {{ option.label }}
+              <th
+                v-for="option in comparison.selectedOptions"
+                :key="option.id"
+                scope="col"
+                :class="{ 'comparison-option--incomplete': option.isIncomplete }"
+                :data-incomplete-comparison-option="option.isIncomplete ? 'true' : null"
+              >
+                <span>{{ option.label }}</span>
+                <span
+                  v-if="option.warning"
+                  class="comparison-option-warning"
+                  :title="option.warning.title"
+                >
+                  {{ option.warning.text }}
+                </span>
               </th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="row in comparison.rows" :key="row.key">
               <th scope="row">{{ row.label }}</th>
-              <td v-for="cell in row.cells" :key="`${row.key}-${cell.optionId}`">
+              <td
+                v-for="cell in row.cells"
+                :key="`${row.key}-${cell.optionId}`"
+                :class="{ 'comparison-option--incomplete': isIncompleteOption(cell.optionId) }"
+              >
                 <span
                   v-if="cell.kind === 'na'"
                   :class="cell.className"
@@ -189,6 +206,12 @@ const comparedDimensions = computed(() => {
     .filter(Boolean)
 })
 
+const incompleteOptionIds = computed(() => new Set(
+  props.comparison.selectedOptions
+    .filter((option) => option.isIncomplete)
+    .map((option) => option.id)
+))
+
 watch(() => props.comparison.addableDimensions, (nextDimensions) => {
   if (!nextDimensions.some((dimension) => dimension.id === dimensionToAdd.value)) {
     dimensionToAdd.value = ''
@@ -202,6 +225,10 @@ function emitAddDimension() {
 
   emit('add-dimension', dimensionToAdd.value)
   dimensionToAdd.value = ''
+}
+
+function isIncompleteOption(optionId) {
+  return incompleteOptionIds.value.has(optionId)
 }
 </script>
 
@@ -388,6 +415,22 @@ function emitAddDimension() {
 
 .comparison-empty-cell {
   color: #7b8794;
+}
+
+.comparison-option--incomplete {
+  opacity: 0.55;
+}
+
+.comparison-option-warning {
+  display: inline-flex;
+  margin-left: 0.45rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: #fff7d6;
+  border: 1px solid #e0c463;
+  color: #7a4b00;
+  font-size: 0.8rem;
+  font-weight: 700;
 }
 
 @media (max-width: 720px) {

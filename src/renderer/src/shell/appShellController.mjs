@@ -209,7 +209,26 @@ export function createAppShellController({ apiProvider } = {}) {
       return state
     }
 
-    const viewResult = buildLoadSuccessView(schemaResult.schema, optionsResult.options, applianceKey)
+    const supportingDataResult = await loadSupportingData({
+      electronApi,
+      applianceKey,
+      isStale: () => isStale(requestId)
+    })
+    if (!supportingDataResult.ok) {
+      if (supportingDataResult.stale) {
+        return state
+      }
+
+      setErrorState(applianceKey, supportingDataResult.category)
+      return state
+    }
+
+    const viewResult = buildLoadSuccessView(
+      schemaResult.schema,
+      optionsResult.options,
+      applianceKey,
+      supportingDataResult.supportingData
+    )
 
     if (!viewResult.ok) {
       setErrorState(applianceKey, viewResult.category)
@@ -294,6 +313,86 @@ export function createAppShellController({ apiProvider } = {}) {
       loadRequestId += 1
       listeners.clear()
     }
+  }
+}
+
+async function loadSupportingData({ electronApi, applianceKey, isStale }) {
+  if (applianceKey !== 'laundry-set') {
+    return {
+      ok: true,
+      supportingData: null
+    }
+  }
+
+  try {
+    const [washerSchemaResult, washerOptionsResult, dryerSchemaResult, dryerOptionsResult] = await Promise.all([
+      loadSupportingSchema(electronApi, 'washer'),
+      loadSupportingOptions(electronApi, 'washer'),
+      loadSupportingSchema(electronApi, 'dryer'),
+      loadSupportingOptions(electronApi, 'dryer')
+    ])
+
+    if (typeof isStale === 'function' && isStale()) {
+      return { ok: false, stale: true }
+    }
+
+    const failure = [washerSchemaResult, washerOptionsResult, dryerSchemaResult, dryerOptionsResult].find((result) => !result.ok)
+    if (failure) {
+      return failure
+    }
+
+    return {
+      ok: true,
+      supportingData: {
+        washer: {
+          schema: washerSchemaResult.schema,
+          options: washerOptionsResult.options
+        },
+        dryer: {
+          schema: dryerSchemaResult.schema,
+          options: dryerOptionsResult.options
+        }
+      }
+    }
+  } catch (_error) {
+    return fail('Schema unavailable or invalid')
+  }
+}
+
+async function loadSupportingSchema(electronApi, applianceKey) {
+  try {
+    const result = await electronApi.loadSchema(applianceKey)
+    return isValidSchemaEnvelope(result)
+      ? { ok: true, schema: result.schema }
+      : fail('Schema unavailable or invalid')
+  } catch (_error) {
+    return fail('Schema unavailable or invalid')
+  }
+}
+
+async function loadSupportingOptions(electronApi, applianceKey) {
+  try {
+    const result = await electronApi.loadOptions(applianceKey)
+    return isValidOptionsEnvelope(result)
+      ? { ok: true, options: result.options }
+      : fail('Option data unavailable or invalid')
+  } catch (_error) {
+    return fail('Option data unavailable or invalid')
+  }
+}
+
+function isValidSchemaEnvelope(result) {
+  return result && typeof result === 'object' && result.ok === true && result.schema && typeof result.schema === 'object'
+}
+
+function isValidOptionsEnvelope(result) {
+  return result && typeof result === 'object' && result.ok === true && Array.isArray(result.options)
+}
+
+function fail(category) {
+  return {
+    ok: false,
+    category
   }
 }
 
