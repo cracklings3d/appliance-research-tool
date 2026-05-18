@@ -418,3 +418,101 @@ test('buildLoadSuccessView returns empty or ready and rejects malformed rows', a
   assert.equal(invalidResult.ok, false)
   assert.equal(invalidResult.category, 'Malformed Option rows')
 })
+
+test('deriveListFilters includes only direct visible filterable Dimensions in schema order', async () => {
+  const { deriveVisibleColumns, deriveListFilters } = await loadListViewModel()
+  const columns = deriveVisibleColumns('dryer', {
+    dimensions: [
+      { id: 'brand', label: 'Brand', type: 'string', required: true },
+      { id: 'energyLevel', label: 'Energy', type: 'enum', required: true, allowedValues: ['A', 'B'] },
+      { id: 'hasInverterMotor', label: 'Inverter', type: 'boolean', required: false },
+      { id: 'price', label: 'Price', type: 'numeric', required: true, unit: 'CNY' }
+    ]
+  }).columns
+
+  const filters = deriveListFilters(columns)
+  assert.deepEqual(filters.map((filter) => filter.id), ['brand', 'energyLevel', 'hasInverterMotor', 'price'])
+  assert.equal(filters[1].allowedValues[0], 'A')
+})
+
+test('list filter activation and matching semantics follow issue-7 rules', async () => {
+  const {
+    deriveListFilters,
+    classifyRowAgainstFilters,
+    deriveVisibleRows,
+    patchListFilters
+  } = await loadListViewModel()
+
+  const columns = [
+    { id: 'brand', label: 'Brand', type: 'string', required: true },
+    { id: 'energy', label: 'Energy', type: 'enum', required: false, allowedValues: ['A', 'B'] },
+    { id: 'inverter', label: 'Inverter', type: 'boolean', required: false },
+    { id: 'price', label: 'Price', type: 'numeric', required: false }
+  ]
+
+  let filters = deriveListFilters(columns)
+  filters = patchListFilters(columns, filters, { dimensionId: 'brand', patch: { mode: 'substring', value: 'alpha' } })
+  filters = patchListFilters(columns, filters, { dimensionId: 'energy', patch: { selectedValues: ['A', 'B'] } })
+  filters = patchListFilters(columns, filters, { dimensionId: 'inverter', patch: { value: true } })
+  filters = patchListFilters(columns, filters, { dimensionId: 'price', patch: { min: '500', max: '1000' } })
+
+  const completeRow = {
+    key: 'complete',
+    option: {
+      evaluations: {
+        brand: { status: 'known', value: 'Alpha Pro' },
+        energy: { status: 'known', value: 'A' },
+        inverter: { status: 'known', value: true },
+        price: { status: 'known', value: 900 }
+      }
+    },
+    cells: []
+  }
+  const warningRow = {
+    key: 'warning',
+    option: {
+      evaluations: {
+        brand: { status: 'known', value: 'Alpha Lite' },
+        energy: { status: 'na' },
+        inverter: { status: 'known', value: true },
+        price: { status: 'known', value: 800 }
+      }
+    },
+    cells: []
+  }
+  const rejectedRow = {
+    key: 'reject',
+    option: {
+      evaluations: {
+        brand: { status: 'known', value: 'Alpha Mini' },
+        energy: { status: 'known', value: 'A' },
+        inverter: { status: 'known', value: false },
+        price: { status: 'known', value: 750 }
+      }
+    },
+    cells: []
+  }
+
+  assert.equal(classifyRowAgainstFilters(completeRow, filters).matchKind, 'complete-match')
+  const warningResult = classifyRowAgainstFilters(warningRow, filters)
+  assert.equal(warningResult.matchKind, 'na-warning')
+  assert.deepEqual(warningResult.filterWarningDimensionLabels, ['Energy'])
+  assert.equal(classifyRowAgainstFilters(rejectedRow, filters).matchKind, 'reject')
+
+  const visible = deriveVisibleRows([warningRow, rejectedRow, completeRow], filters)
+  assert.equal(visible.hasActiveFilters, true)
+  assert.deepEqual(visible.rows.map((row) => row.key), ['complete', 'warning'])
+})
+
+test('missing optional relevant Evaluation is treated as N/A keep while malformed data rejects', async () => {
+  const { deriveListFilters, patchListFilters, classifyRowAgainstFilters } = await loadListViewModel()
+  const columns = [{ id: 'warranty', label: 'Warranty', type: 'numeric', required: false }]
+  let filters = deriveListFilters(columns)
+  filters = patchListFilters(columns, filters, { dimensionId: 'warranty', patch: { min: '12' } })
+
+  const missingResult = classifyRowAgainstFilters({ option: { evaluations: {} } }, filters)
+  assert.equal(missingResult.matchKind, 'na-warning')
+
+  const malformedResult = classifyRowAgainstFilters({ option: { evaluations: { warranty: { status: 'known', value: '12' } } } }, filters)
+  assert.equal(malformedResult.matchKind, 'reject')
+})

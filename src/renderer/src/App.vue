@@ -32,6 +32,7 @@
             :selection-disabled="crudBusy"
             @retry="retryLoad"
             @toggle-option="toggleOptionSelection"
+            @update-filter="updateFilter"
           />
 
           <OptionListView
@@ -166,7 +167,7 @@ const optionRows = computed(() => {
   }
 
   return Array.isArray(view.value.rows)
-    ? view.value.rows
+    ? (Array.isArray(view.value.canonicalRows) ? view.value.canonicalRows : view.value.rows)
       .map((row) => row?.option)
       .filter((option) => option && typeof option === 'object')
       .map((option) => ({
@@ -204,8 +205,11 @@ const crudBusy = computed(() => (
 const navigationDisabled = computed(() => crudBusy.value || Boolean(crudViewState.value.session))
 
 function syncCrudFromWorkspace(nextState) {
-  const nextOptions = Array.isArray(nextState?.view?.rows)
-    ? nextState.view.rows
+  const sourceRows = Array.isArray(nextState?.view?.canonicalRows)
+    ? nextState.view.canonicalRows
+    : nextState?.view?.rows
+  const nextOptions = Array.isArray(sourceRows)
+    ? sourceRows
       .map((row) => row?.option)
       .filter((option) => option && typeof option === 'object')
     : []
@@ -262,6 +266,14 @@ function toggleOptionSelection(optionId) {
   }
 
   controller.toggleOptionSelection(optionId)
+}
+
+function updateFilter(update) {
+  if (crudBusy.value) {
+    return
+  }
+
+  void controller.updateFilters(update)
 }
 
 function addComparedDimension(dimensionKey) {

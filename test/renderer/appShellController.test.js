@@ -469,3 +469,97 @@ test('latest Appliance selection wins when stale responses resolve later', async
   assert.equal(controller.getState().view.status, 'ready')
   assert.equal(controller.getState().view.rows[0].key, 'dryer-1')
 })
+
+test('changing active Appliance resets filters while same-Appliance retry preserves and reapplies them', async () => {
+  const { createAppShellController } = await loadControllerModule()
+  const apiState = {
+    washerOptions: [
+      {
+        id: 'washer-1',
+        evaluations: {
+          brand: { status: 'known', value: 'Alpha' },
+          price: { status: 'known', value: 900 }
+        }
+      },
+      {
+        id: 'washer-2',
+        evaluations: {
+          brand: { status: 'known', value: 'Beta' },
+          price: { status: 'known', value: 1200 }
+        }
+      }
+    ]
+  }
+
+  const controller = createAppShellController({
+    apiProvider: () => ({
+      listSchemas: async () => ({ schemas: [{ applianceKey: 'washer', displayName: 'Washer' }, { applianceKey: 'dryer', displayName: 'Dryer' }] }),
+      loadSchema: async (applianceKey) => ({
+        ok: true,
+        schema: {
+          dimensions: [
+            { id: 'brand', label: 'Brand', type: 'string', required: true },
+            { id: 'price', label: 'Price', type: 'numeric', required: true }
+          ],
+          defaultListOrder: [{ dimensionId: 'price', direction: 'asc' }],
+          appliance: applianceKey
+        }
+      }),
+      loadOptions: async (applianceKey) => ({
+        ok: true,
+        options: applianceKey === 'washer'
+          ? apiState.washerOptions
+          : [{ id: 'dryer-1', evaluations: { brand: { status: 'known', value: 'Dryer' }, price: { status: 'known', value: 700 } } }]
+      })
+    })
+  })
+
+  await controller.boot()
+  await controller.updateFilters({ dimensionId: 'brand', patch: { value: 'Alpha', mode: 'exact' } })
+  assert.equal(controller.getState().view.hasActiveFilters, true)
+  assert.deepEqual(controller.getState().view.rows.map((row) => row.key), ['washer-1'])
+
+  apiState.washerOptions = [
+    {
+      id: 'washer-3',
+      evaluations: {
+        brand: { status: 'known', value: 'Alpha' },
+        price: { status: 'known', value: 800 }
+      }
+    }
+  ]
+
+  await controller.retry()
+  assert.equal(controller.getState().view.filters[0].draft.value, 'Alpha')
+  assert.deepEqual(controller.getState().view.rows.map((row) => row.key), ['washer-3'])
+
+  await controller.selectAppliance('dryer')
+  assert.equal(controller.getState().view.hasActiveFilters, false)
+  assert.equal(controller.getState().view.filters[0].draft.value, '')
+})
+
+test('filtered-empty message is distinct from appliance-empty state', async () => {
+  const { createAppShellController } = await loadControllerModule()
+  const controller = createAppShellController({
+    apiProvider: () => ({
+      loadSchema: async () => ({
+        ok: true,
+        schema: {
+          dimensions: [{ id: 'brand', label: 'Brand', type: 'string', required: true }],
+          defaultListOrder: [{ dimensionId: 'brand', direction: 'asc' }]
+        }
+      }),
+      loadOptions: async () => ({
+        ok: true,
+        options: [{ id: 'washer-1', evaluations: { brand: { status: 'known', value: 'Alpha' } } }]
+      })
+    })
+  })
+
+  await controller.retry()
+  await controller.updateFilters({ dimensionId: 'brand', patch: { value: 'Nope', mode: 'exact' } })
+
+  assert.equal(controller.getState().view.status, 'ready')
+  assert.equal(controller.getState().view.rows.length, 0)
+  assert.match(controller.getState().view.message, /No visible Options match the active Dimension filters/) 
+})
