@@ -324,51 +324,42 @@ async function loadSupportingData({ electronApi, applianceKey, isStale }) {
     }
   }
 
-  try {
-    const [washerSchemaResult, washerOptionsResult, dryerSchemaResult, dryerOptionsResult] = await Promise.all([
-      loadSupportingSchema(electronApi, 'washer'),
-      loadSupportingOptions(electronApi, 'washer'),
-      loadSupportingSchema(electronApi, 'dryer'),
-      loadSupportingOptions(electronApi, 'dryer')
-    ])
+  const [washerSchemaResult, washerOptionsResult, dryerSchemaResult, dryerOptionsResult] = await Promise.all([
+    loadSupportingSchema(electronApi, 'washer'),
+    loadSupportingOptions(electronApi, 'washer'),
+    loadSupportingSchema(electronApi, 'dryer'),
+    loadSupportingOptions(electronApi, 'dryer')
+  ])
 
-    if (typeof isStale === 'function' && isStale()) {
-      return { ok: false, stale: true }
-    }
+  if (typeof isStale === 'function' && isStale()) {
+    return { ok: false, stale: true }
+  }
 
-    return {
-      ok: true,
-      supportingData: {
-        washer: {
-          schemaAvailable: washerSchemaResult.ok,
-          schema: washerSchemaResult.ok ? washerSchemaResult.schema : null,
-          optionsAvailable: washerOptionsResult.ok,
-          options: washerOptionsResult.ok ? washerOptionsResult.options : []
-        },
-        dryer: {
-          schemaAvailable: dryerSchemaResult.ok,
-          schema: dryerSchemaResult.ok ? dryerSchemaResult.schema : null,
-          optionsAvailable: dryerOptionsResult.ok,
-          options: dryerOptionsResult.ok ? dryerOptionsResult.options : []
-        }
-      }
-    }
-  } catch (_error) {
-    return {
-      ok: true,
-      supportingData: {
-        washer: {
-          schemaAvailable: false,
-          schema: null,
-          optionsAvailable: false,
-          options: []
-        },
-        dryer: {
-          schemaAvailable: false,
-          schema: null,
-          optionsAvailable: false,
-          options: []
-        }
+  const firstFailure = [
+    washerSchemaResult,
+    washerOptionsResult,
+    dryerSchemaResult,
+    dryerOptionsResult
+  ].find((result) => !result.ok)
+
+  if (firstFailure) {
+    return fail(firstFailure.category)
+  }
+
+  return {
+    ok: true,
+    supportingData: {
+      washer: {
+        schemaAvailable: true,
+        schema: washerSchemaResult.schema,
+        optionsAvailable: true,
+        options: washerOptionsResult.options
+      },
+      dryer: {
+        schemaAvailable: true,
+        schema: dryerSchemaResult.schema,
+        optionsAvailable: true,
+        options: dryerOptionsResult.options
       }
     }
   }
