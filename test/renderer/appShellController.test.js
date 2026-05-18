@@ -561,5 +561,126 @@ test('filtered-empty message is distinct from appliance-empty state', async () =
 
   assert.equal(controller.getState().view.status, 'ready')
   assert.equal(controller.getState().view.rows.length, 0)
-  assert.match(controller.getState().view.message, /No visible Options match the active Dimension filters/) 
+  assert.match(controller.getState().view.message, /No visible Options match the active Dimension filters/)
+})
+
+test('laundry-set loads supporting washer and dryer dependencies for delegated resolution', async () => {
+  const { createAppShellController } = await loadControllerModule()
+  const calls = []
+
+  const controller = createAppShellController({
+    apiProvider: () => ({
+      loadSchema: async (applianceKey) => {
+        calls.push(`schema:${applianceKey}`)
+        if (applianceKey === 'laundry-set') {
+          return {
+            ok: true,
+            schema: {
+              dimensions: [
+                { id: 'brand', label: 'Brand', type: 'string', required: true },
+                { id: 'washer', label: 'Washer', type: 'pointer', required: true },
+                { id: 'dryer', label: 'Dryer', type: 'pointer', required: true },
+                { id: 'washer.capacityKg', label: 'Washer Capacity', type: 'numeric', required: false }
+              ],
+              defaultListOrder: [{ dimensionId: 'brand', direction: 'asc' }]
+            }
+          }
+        }
+
+        return {
+          ok: true,
+          schema: {
+            dimensions: [
+              applianceKey === 'washer'
+                ? { id: 'capacityKg', label: 'Capacity', type: 'numeric', required: true, unit: 'kg' }
+                : { id: 'noiseLevelDb', label: 'Noise', type: 'numeric', required: false, unit: 'dB' }
+            ]
+          }
+        }
+      },
+      loadOptions: async (applianceKey) => {
+        calls.push(`options:${applianceKey}`)
+        if (applianceKey === 'laundry-set') {
+          return {
+            ok: true,
+            options: [{
+              id: 'set-1',
+              evaluations: {
+                brand: { status: 'known', value: 'Bundle' },
+                washer: { status: 'known', value: 'washer-1' },
+                dryer: { status: 'known', value: 'dryer-1' }
+              }
+            }]
+          }
+        }
+
+        return {
+          ok: true,
+          options: [{
+            id: `${applianceKey}-1`,
+            evaluations: applianceKey === 'washer'
+              ? { capacityKg: { status: 'known', value: 10 } }
+              : { noiseLevelDb: { status: 'known', value: 61 } }
+          }]
+        }
+      }
+    })
+  })
+
+  await controller.selectAppliance('laundry-set')
+
+  assert.equal(controller.getState().view.status, 'ready')
+  assert.deepEqual(calls, [
+    'schema:laundry-set',
+    'options:laundry-set',
+    'schema:washer',
+    'options:washer',
+    'schema:dryer',
+    'options:dryer'
+  ])
+  assert.equal(controller.getState().view.rows[0].cells[1].text, '10 kg')
+})
+
+test('laundry-set supporting dependency failure yields bounded active-view error', async () => {
+  const { createAppShellController } = await loadControllerModule()
+  const controller = createAppShellController({
+    apiProvider: () => ({
+      loadSchema: async (applianceKey) => {
+        if (applianceKey === 'laundry-set') {
+          return {
+            ok: true,
+            schema: {
+              dimensions: [
+                { id: 'brand', label: 'Brand', type: 'string', required: true },
+                { id: 'washer', label: 'Washer', type: 'pointer', required: true },
+                { id: 'dryer', label: 'Dryer', type: 'pointer', required: true },
+                { id: 'washer.capacityKg', label: 'Washer Capacity', type: 'numeric', required: false }
+              ],
+              defaultListOrder: [{ dimensionId: 'brand', direction: 'asc' }]
+            }
+          }
+        }
+
+        return Promise.reject(new Error('dependency load failed'))
+      },
+      loadOptions: async (applianceKey) => ({
+        ok: true,
+        options: applianceKey === 'laundry-set'
+          ? [{
+            id: 'set-1',
+            evaluations: {
+              brand: { status: 'known', value: 'Bundle' },
+              washer: { status: 'known', value: 'washer-1' },
+              dryer: { status: 'known', value: 'dryer-1' }
+            }
+          }]
+          : []
+      })
+    })
+  })
+
+  await controller.selectAppliance('laundry-set')
+
+  assert.equal(controller.getState().view.status, 'error')
+  assert.match(controller.getState().view.message, /Laundry Set could not be loaded\. Schema unavailable or invalid\./)
 })

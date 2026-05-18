@@ -52,3 +52,22 @@ test('read-only option list exposes schema-derived filters, row Warning copy, an
   assert.match(source, /cell\.kind === 'na'/)
   assert.match(source, /data-evaluation-state="cell\.dataEvaluationState"|:data-evaluation-state="cell\.dataEvaluationState"/)
 })
+
+test('option list panel renders visible Warning evidence and greyed incomplete row styling hooks', () => {
+  const source = readRendererFile('src/renderer/src/components/OptionListPanel.vue')
+
+  assert.match(source, /row\.warning/)
+  assert.match(source, /row-warning-badge/)
+  assert.match(source, /Warning/)
+  assert.match(source, /option-row--incomplete/)
+  assert.match(source, /data-incomplete-row/)
+})
+
+test('comparison panel renders visible Warning evidence and greyed incomplete comparison styling hooks', () => {
+  const source = readRendererFile('src/renderer/src/components/ComparisonPanel.vue')
+
+  assert.match(source, /option\.warning/)
+  assert.match(source, /comparison-option-warning/)
+  assert.match(source, /comparison-option--incomplete/)
+  assert.match(source, /data-incomplete-comparison-option/)
+})

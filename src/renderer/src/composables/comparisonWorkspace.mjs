@@ -827,15 +827,19 @@ export function normalizePresetRecords(presets, warnings) {
 
 export function buildComparisonMatrix({ availableDimensions, comparedDimensionKeys, orderedOptions, selectedOptionIds }) {
   const normalizedDimensions = Array.isArray(availableDimensions) ? availableDimensions : []
-  const normalizedOptions = Array.isArray(orderedOptions) ? orderedOptions : []
+  const normalizedOptions = (Array.isArray(orderedOptions) ? orderedOptions : [])
+    .map(normalizeOrderedOptionEntry)
+    .filter(Boolean)
   const nextSelectedOptionIds = pruneSelectedOptionIds(selectedOptionIds, normalizedOptions)
   const selectedIds = new Set(nextSelectedOptionIds)
   const selectedOptions = normalizedOptions
     .filter((option) => selectedIds.has(option.id))
     .map((option) => ({
       id: option.id,
-      label: deriveOptionLabel(option),
-      option
+      label: deriveOptionLabel(option.option),
+      option: option.option,
+      isIncomplete: option.isIncomplete === true,
+      warning: option.warning || null
     }))
 
   const dimensionsById = new Map(normalizedDimensions.map((dimension) => [dimension.id, dimension]))
@@ -1084,8 +1088,45 @@ function deriveOrderedOptions(rows) {
   }
 
   return rows
-    .map((row) => row?.option)
-    .filter((option) => option && typeof option === 'object')
+    .map((row) => {
+      if (!row || typeof row !== 'object' || !row.option || typeof row.option !== 'object') {
+        return null
+      }
+
+      return {
+        id: typeof row.key === 'string' && row.key !== '' ? row.key : row.option.id,
+        option: row.option,
+        isIncomplete: row.isIncomplete === true,
+        warning: row.warning || null
+      }
+    })
+    .filter(Boolean)
+}
+
+function normalizeOrderedOptionEntry(entry) {
+  if (!entry || typeof entry !== 'object') {
+    return null
+  }
+
+  if (entry.option && typeof entry.option === 'object') {
+    return {
+      id: typeof entry.id === 'string' && entry.id !== '' ? entry.id : entry.option.id,
+      option: entry.option,
+      isIncomplete: entry.isIncomplete === true,
+      warning: entry.warning || null
+    }
+  }
+
+  if (entry.evaluations && typeof entry.evaluations === 'object') {
+    return {
+      id: entry.id,
+      option: entry,
+      isIncomplete: false,
+      warning: null
+    }
+  }
+
+  return null
 }
 
 function fail(category) {

@@ -60,7 +60,7 @@ test('validateElectronApi rejects missing or malformed preload exposure', async 
   assert.equal(validateElectronApi({ listSchemas() {} }, ['listSchemas']).ok, true)
 })
 
-test('deriveVisibleColumns preserves schema order and excludes laundry-set pointer and delegated Dimensions', async () => {
+test('deriveVisibleColumns preserves schema order, excludes laundry-set pointer Dimensions, and includes delegated display Dimensions', async () => {
   const { deriveVisibleColumns } = await loadListViewModel()
   const result = deriveVisibleColumns('laundry-set', {
     dimensions: [
@@ -70,10 +70,37 @@ test('deriveVisibleColumns preserves schema order and excludes laundry-set point
       { id: 'bundlePrice', label: 'Bundle Price', type: 'numeric', required: true, unit: 'CNY' },
       { id: 'sourceUrl', label: 'Source URL', type: 'string', required: false }
     ]
+  }, {
+    resolutionContext: {
+      ok: true,
+      targets: {
+        washer: {
+          dimensionsById: new Map([['capacityKg', { id: 'capacityKg', type: 'numeric', unit: 'kg' }]])
+        },
+        dryer: {
+          dimensionsById: new Map()
+        }
+      }
+    }
   })
 
   assert.equal(result.ok, true)
-  assert.deepEqual(result.columns.map((column) => column.id), ['brand', 'bundlePrice', 'sourceUrl'])
+  assert.deepEqual(result.columns.map((column) => column.id), ['brand', 'washer.capacityKg', 'bundlePrice', 'sourceUrl'])
+  assert.equal(result.columns[1].unit, 'kg')
+})
+
+test('deriveVisibleColumns remains unchanged for non-laundry-set Appliances', async () => {
+  const { deriveVisibleColumns } = await loadListViewModel()
+
+  const result = deriveVisibleColumns('washer', {
+    dimensions: [
+      { id: 'brand', label: 'Brand', type: 'string', required: true },
+      { id: 'price', label: 'Price', type: 'numeric', required: true, unit: 'CNY' }
+    ]
+  })
+
+  assert.equal(result.ok, true)
+  assert.deepEqual(result.columns.map((column) => column.id), ['brand', 'price'])
 })
 
 test('deriveVisibleColumns fails on duplicate ids and invalid visible metadata', async () => {
@@ -300,6 +327,110 @@ test('deriveOrderedRows sorts known values before N/A and preserves source order
 
   assert.equal(result.ok, true)
   assert.deepEqual(result.rows.map((row) => row.key), ['row-2', 'row-3', 'row-1'])
+})
+
+test('buildLoadSuccessView resolves delegated laundry-set values and keeps incomplete rows visible', async () => {
+  const { buildLoadSuccessView } = await loadListViewModel()
+
+  const result = buildLoadSuccessView({
+    dimensions: [
+      { id: 'brand', label: 'Brand', type: 'string', required: true },
+      { id: 'washer', label: 'Washer', type: 'pointer', required: true },
+      { id: 'dryer', label: 'Dryer', type: 'pointer', required: true },
+      { id: 'washer.capacityKg', label: 'Washer Capacity', type: 'numeric', required: false },
+      { id: 'bundlePrice', label: 'Bundle Price', type: 'numeric', required: true, unit: 'CNY' }
+    ],
+    defaultListOrder: [
+      { dimensionId: 'washer.capacityKg', direction: 'asc' }
+    ]
+  }, [
+    {
+      id: 'set-1',
+      evaluations: {
+        brand: { status: 'known', value: 'BundleCo' },
+        bundlePrice: { status: 'known', value: 2100 },
+        washer: { status: 'known', value: 'washer-1' },
+        dryer: { status: 'known', value: 'dryer-1' }
+      }
+    },
+    {
+      id: 'set-2',
+      evaluations: {
+        brand: { status: 'known', value: 'BrokenCo' },
+        bundlePrice: { status: 'known', value: 2200 },
+        washer: { status: 'na' },
+        dryer: { status: 'known', value: 'dryer-1' }
+      }
+    }
+  ], 'laundry-set', {
+    washer: {
+      schema: {
+        dimensions: [
+          { id: 'capacityKg', label: 'Capacity', type: 'numeric', required: true, unit: 'kg' }
+        ]
+      },
+      options: [
+        {
+          id: 'washer-1',
+          evaluations: {
+            capacityKg: { status: 'known', value: 10 }
+          }
+        }
+      ]
+    },
+    dryer: {
+      schema: {
+        dimensions: [
+          { id: 'noiseLevelDb', label: 'Noise', type: 'numeric', required: false, unit: 'dB' }
+        ]
+      },
+      options: [
+        {
+          id: 'dryer-1',
+          evaluations: {
+            noiseLevelDb: { status: 'known', value: 62 }
+          }
+        }
+      ]
+    }
+  })
+
+  assert.equal(result.ok, true)
+  assert.equal(result.rows[0].key, 'set-1')
+  assert.equal(result.rows[0].cells[1].text, '10 kg')
+  assert.equal(result.rows[1].isIncomplete, true)
+  assert.equal(result.rows[1].warning.text, 'Warning')
+  assert.equal(result.rows[1].cells[1].text, 'N/A')
+})
+
+test('buildLoadSuccessView rejects delegated target-schema mismatches for laundry-set', async () => {
+  const { buildLoadSuccessView } = await loadListViewModel()
+
+  const result = buildLoadSuccessView({
+    dimensions: [
+      { id: 'brand', label: 'Brand', type: 'string', required: true },
+      { id: 'washer.capacityKg', label: 'Washer Capacity', type: 'string', required: false }
+    ],
+    defaultListOrder: [
+      { dimensionId: 'brand', direction: 'asc' }
+    ]
+  }, [], 'laundry-set', {
+    washer: {
+      schema: {
+        dimensions: [
+          { id: 'capacityKg', label: 'Capacity', type: 'numeric', required: true, unit: 'kg' }
+        ]
+      },
+      options: []
+    },
+    dryer: {
+      schema: { dimensions: [] },
+      options: []
+    }
+  })
+
+  assert.equal(result.ok, false)
+  assert.equal(result.category, 'Schema unavailable or invalid')
 })
 
 test('deriveOrderedRows applies enum ordering case-insensitively with deterministic string tie-breaks', async () => {
