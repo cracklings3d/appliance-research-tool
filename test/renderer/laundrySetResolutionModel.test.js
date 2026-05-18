@@ -150,3 +150,42 @@ test('deriveLaundrySetRow marks unresolved pointer states incomplete with visibl
   assert.deepEqual(unresolved.row.warning.missingReferences, ['washer', 'dryer'])
   assert.match(unresolved.row.warning.title, /washer and dryer/)
 })
+
+test('createLaundrySetResolutionContext tolerates unavailable supporting schemas and marks delegated references unresolved', async () => {
+  const { createLaundrySetResolutionContext, deriveLaundrySetRow, resolveLaundrySetColumn } = await loadModule()
+
+  const context = createLaundrySetResolutionContext({
+    washer: {
+      schemaAvailable: false,
+      schema: null,
+      optionsAvailable: false,
+      options: []
+    },
+    dryer: {
+      schema: createTargetSchema([
+        { id: 'noiseLevelDb', label: 'Noise', type: 'numeric', required: false, unit: 'dB' }
+      ]),
+      options: [createOption('dryer-1', { noiseLevelDb: { status: 'known', value: 60 } })]
+    }
+  })
+
+  assert.equal(context.ok, true)
+  assert.equal(context.targets.washer.available, false)
+  assert.equal(context.targets.dryer.available, true)
+
+  const washerColumn = resolveLaundrySetColumn({ id: 'washer.capacityKg', label: 'Washer Capacity', type: 'numeric', required: false }, context).column
+
+  const result = deriveLaundrySetRow(createOption('set-3', {
+    brand: { status: 'known', value: 'Bundle' },
+    washer: { status: 'known', value: 'washer-1' },
+    dryer: { status: 'known', value: 'dryer-1' }
+  }), [
+    { id: 'brand', label: 'Brand', type: 'string', required: true, delegated: null },
+    washerColumn
+  ], context)
+
+  assert.equal(result.ok, true)
+  assert.equal(result.row.isIncomplete, true)
+  assert.equal(result.row.cells[1].text, 'N/A')
+  assert.deepEqual(result.row.warning.missingReferences, ['washer'])
+ })

@@ -3,7 +3,7 @@ const POINTER_KEYS = ['washer', 'dryer']
 
 export function createLaundrySetResolutionContext(dependencies) {
   if (!dependencies || typeof dependencies !== 'object') {
-    return fail('Schema unavailable or invalid')
+    return okResolutionTargets(createUnavailableTargets())
   }
 
   const targets = {}
@@ -11,29 +11,36 @@ export function createLaundrySetResolutionContext(dependencies) {
   for (const pointerKey of POINTER_KEYS) {
     const target = dependencies[pointerKey]
     if (!target || typeof target !== 'object') {
-      return fail('Schema unavailable or invalid')
+      targets[pointerKey] = createUnavailableTarget()
+      continue
+    }
+
+    if (target.schemaAvailable === false) {
+      targets[pointerKey] = createUnavailableTarget({
+        optionsById: indexTargetOptions(target.options).ok
+          ? indexTargetOptions(target.options).optionsById
+          : new Map()
+      })
+      continue
     }
 
     const schemaIndexResult = indexTargetSchema(target.schema)
     if (!schemaIndexResult.ok) {
-      return schemaIndexResult
+      targets[pointerKey] = createUnavailableTarget()
+      continue
     }
 
     const optionsIndexResult = indexTargetOptions(target.options)
-    if (!optionsIndexResult.ok) {
-      return optionsIndexResult
-    }
+    const optionsById = optionsIndexResult.ok ? optionsIndexResult.optionsById : new Map()
 
     targets[pointerKey] = {
+      available: true,
       dimensionsById: schemaIndexResult.dimensionsById,
-      optionsById: optionsIndexResult.optionsById
+      optionsById
     }
   }
 
-  return {
-    ok: true,
-    targets
-  }
+  return okResolutionTargets(targets)
 }
 
 export function resolveLaundrySetColumn(dimension, resolutionContext) {
@@ -47,6 +54,22 @@ export function resolveLaundrySetColumn(dimension, resolutionContext) {
   }
 
   const target = resolutionContext.targets[delegatedReference.pointerKey]
+  if (!target || target.available === false) {
+    return {
+      ok: true,
+      column: {
+        id: dimension.id,
+        label: dimension.label,
+        type: dimension.type,
+        required: dimension.required,
+        delegated: {
+          pointerKey: delegatedReference.pointerKey,
+          dimensionId: delegatedReference.dimensionId
+        }
+      }
+    }
+  }
+
   const targetDimension = target.dimensionsById.get(delegatedReference.dimensionId)
 
   if (!targetDimension || !SUPPORTED_VISIBLE_DIMENSION_TYPES.has(targetDimension.type)) {
@@ -357,5 +380,24 @@ function fail(category) {
   return {
     ok: false,
     category
+  }
+}
+
+function okResolutionTargets(targets) {
+  return {
+    ok: true,
+    targets
+  }
+}
+
+function createUnavailableTargets() {
+  return Object.fromEntries(POINTER_KEYS.map((pointerKey) => [pointerKey, createUnavailableTarget()]))
+}
+
+function createUnavailableTarget({ optionsById } = {}) {
+  return {
+    available: false,
+    dimensionsById: new Map(),
+    optionsById: optionsById || new Map()
   }
 }
